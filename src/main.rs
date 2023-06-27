@@ -1,4 +1,4 @@
-// Procedttre CycleEquiv (G)
+// Procedure CycleEquiv (G)
 
 // Given a strongly connected graph S , let U be the undirected
 // multigraph formed by removing edge directions. Since U
@@ -109,12 +109,155 @@
 // for which e was most recently the topmost bracket.
 
 // BracketList overview
-// create () : BracketList — make an empty BracketList structure.
-// size (bl : BracketList) : integer — number of elements in BracketList structure.
-// push (bl : BracketList e : bracket) : BracketList — push e on top of bl.
-// top (bl : BracketList) : bracket — topmost bracket in bl.
-// delete (bl : BracketList e : bracket) : BracketList — delete e from bl.
-// concat (bl1 bl2 : BracketList) : BracketList — concatenate bl1 and bl2 .
+// create () : — make an empty BracketList structure.
+// size : — number of elements in BracketList structure.
+// push :  — push e on top of bl.
+// top : — topmost bracket in bl.
+// delete — delete e from bl.
+// concat  — concatenate bl1 and bl2 .
+
+
+use petgraph::visit::Dfs;
+use petgraph::Graph;
+use petgraph::graph::NodeIndex;
+
+use dot_writer::{Color, DotWriter, Attributes, Shape, Style};
+
+use std::fs::File;
+use std::io::Write;
+use std::process::Command;
+use std::fmt;
+
+use std::rc::Rc;
+use std::cell::RefCell;
+use linked_list::LinkedList;
+
+#[derive(Clone,Debug)]
+struct Node {
+    id: usize, // external id -- not used in algorithm
+    dfsnum: usize, // depth in DFS
+    blist: BracketList, // list of bracket edges
+    hi: usize, // highest dfsnum of any descendant
+}
+
+// display method for Node
+impl fmt::Display for Node {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Node: id: {}, dfsnum: {}, hi: {}, blist: {}", self.id, self.dfsnum, self.hi, self.blist)
+    }
+}
+
+#[derive(Clone,Debug)]
+struct Edge {
+    from: usize, // index of from node in graph
+    to: usize, // index of to node in graph
+    class: usize, // cycle equivalence class
+    recent_size: usize, // size of bracket list when this edge was most recently the topmost bracket
+    recent_class: usize, // equivalence class number of tree edge for which this edge was most recently the topmost bracket
+    is_backedge: bool, // is this edge a backedge?
+    is_capping: bool, // is this edge a capping backedge?
+}
+
+// implement default constructor for Edge that takes only from and to
+impl Edge {
+    fn new(_from: usize, _to: usize) -> Edge {
+        Edge {
+            from: _from,
+            to: _to,
+            class: 0,
+            recent_size: 0,
+            recent_class: 0,
+            is_backedge: false,
+            is_capping: false,
+        }
+    }
+}
+
+// display method for Edge that shows all attributes
+impl fmt::Display for Edge {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Edge: from: {}, to: {}, class: {}, recent_size: {}, recent_class: {}, is_backedge: {}, is_capping: {}", self.from, self.to, self.class, self.recent_size, self.recent_class, self.is_backedge, self.is_capping)
+    }
+}
+
+#[derive(Clone,Debug)]
+struct BracketList {
+    brackets: LinkedList<Rc<RefCell<Edge>>>,
+}
+
+// display method for BracketList
+impl fmt::Display for BracketList {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let mut result = String::new();
+        for bracket in self.brackets.iter() {
+            result.push_str(&format!("{} ", bracket.borrow()));
+        }
+        write!(f, "{}", result)
+    }
+}
+
+impl BracketList {
+    fn new() -> Self {
+        Self { brackets: LinkedList::new() }
+    }
+
+    fn push(&mut self, edge: Rc<RefCell<Edge>>) {
+        self.brackets.push_back(edge);
+    }
+
+    fn top(&self) -> Option<Rc<RefCell<Edge>>> {
+        self.brackets.back().cloned()
+    }
+
+    fn delete(&mut self, edge: &Rc<RefCell<Edge>>) {
+        let mut cursor = self.brackets.cursor();
+        while let Some(e) = cursor.peek_next() {
+            if Rc::ptr_eq(e, edge) {
+                cursor.remove();
+                break;
+            }
+            cursor.next();
+        }
+    }
+    
+    fn concat(&mut self, other: &Self) {
+        self.brackets.append(&mut other.brackets.clone());
+    }
+}
+
+// function that writes the petgraph to a dot format file
+fn write_dot(graph: &Graph<Rc<RefCell<Node>>, Rc<RefCell<Edge>>>, file_name: &str) {
+    let mut output_bytes = Vec::new();
+    {
+        let mut writer = DotWriter::from(&mut output_bytes);
+        //writer.set_pretty_print(false);
+        let mut digraph = writer.digraph();
+        for edge in graph.edge_references() {
+            let e = edge.weight().borrow();
+            let f = graph[NodeIndex::new(e.from)].borrow().id.to_string();
+            let t = graph[NodeIndex::new(e.to)].borrow().id.to_string();
+            digraph.edge(f, t);
+        }
+        for node in graph.node_indices() {
+            let n = graph[node].borrow();
+            let id = n.id.to_string();
+            digraph.node_named(id)
+                .set_shape(Shape::Rectangle)
+                .set_label(n.id.to_string().as_str());
+        }
+    }
+    let mut file = File::create(file_name).unwrap();
+    file.write_all(&output_bytes).unwrap();
+    // run dot to generate pdf
+    Command::new("dot")
+        .arg("-Tpdf")
+        .arg(file_name)
+        .arg("-o")
+        .arg(file_name.to_owned() + ".pdf")
+        .output()
+        .expect("failed to execute process");
+}
+
 
 // 1: perform an undirected depth-fist search on G
 // 2: for each node n in reverse depth-first order do
@@ -166,37 +309,45 @@
 // 48:endfor
 // }
 
-use petgraph::graph::NodeIndex;
 
 fn main() {
-    println!("Hello, world!");
 
-    use petgraph::visit::Dfs;
-    use petgraph::Graph;
+    let mut graph = Graph::<Rc<RefCell<Node>>, Rc<RefCell<Edge>>>::new();
 
-    let mut graph = Graph::<usize, ()>::new();
-    let a = graph.add_node(1);
+    let a = graph.add_node(Rc::new(RefCell::new(Node { id: 1, dfsnum: 0, blist: BracketList::new(), hi: 0 })));
     // print the node index for node a
     println!("{}", a.index());
     
-    let b = graph.add_node(2);
-    let c = graph.add_node(3);
-    let d = graph.add_node(4);
+    let b = graph.add_node(Rc::new(RefCell::new(Node { id: 2, dfsnum: 0, blist: BracketList::new(), hi: 0 })));
+    let c = graph.add_node(Rc::new(RefCell::new(Node { id: 3, dfsnum: 0, blist: BracketList::new(), hi: 0 })));
+    let d = graph.add_node(Rc::new(RefCell::new(Node { id: 4, dfsnum: 0, blist: BracketList::new(), hi: 0 })));
+    let e = graph.add_node(Rc::new(RefCell::new(Node { id: 5, dfsnum: 0, blist: BracketList::new(), hi: 0 })));
 
     // get node at a given index 0
-    let node = graph[NodeIndex::new(0)];
-    println!("got node and index 0 {}", node);
+    let node = graph[NodeIndex::new(0)].clone();
+    println!("got node and index 0 {}", node.borrow());
 
-    graph.add_edge(a, b, ());
-    graph.add_edge(a, d, ());
-    graph.add_edge(b, c, ());
-    graph.add_edge(c, d, ());
+    graph.add_edge(a, b, Rc::new(RefCell::new(Edge::new(0, 1))));
+    graph.add_edge(a, c, Rc::new(RefCell::new(Edge::new(0, 2))));
+    graph.add_edge(b, d, Rc::new(RefCell::new(Edge::new(1, 3))));
+    graph.add_edge(c, d, Rc::new(RefCell::new(Edge::new(2, 3))));
+    graph.add_edge(d, e, Rc::new(RefCell::new(Edge::new(3, 4))));
+
+    // write the graph to dot format to file
+    //let mut f = File::create("graph.dot").unwrap();
+    // use the dot_writer crate to write the graph to file
+    // using square nodes and the default style
+    write_dot(&graph, "graph.dot");
+    
+    //write!(f, "{:?}", Dot::with_config(&graph, &[Config::NodeShape(Shape::Square)])).unwrap();
+    // call graphviz dot to render the file to graph.pdf
+    //Command::new("dot").args(["-Tpdf", "graph.dot", "-o", "graph.pdf"]).status().unwrap();
 
     let mut dfs = Dfs::new(&graph, a);
-
     // print the dfs order
     println!("Dfs order starting from node {:?}:", a);
     while let Some(nx) = dfs.next(&graph) {
         println!("{} {:?}", nx.index(), graph[nx]);
     }
+
 }
