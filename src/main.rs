@@ -231,19 +231,49 @@ fn write_dot(graph: &Graph<Rc<RefCell<Node>>, Rc<RefCell<Edge>>>, file_name: &st
     {
         let mut writer = DotWriter::from(&mut output_bytes);
         //writer.set_pretty_print(false);
-        let mut digraph = writer.digraph();
+        let mut agraph = writer.graph();
         for edge in graph.edge_references() {
             let e = edge.weight().borrow();
             let f = graph[NodeIndex::new(e.from)].borrow().id.to_string();
             let t = graph[NodeIndex::new(e.to)].borrow().id.to_string();
-            digraph.edge(f, t);
+            // label the edge with a compact description of key attributes
+            let mut label = String::new();
+            label.push('[');
+            if e.is_backedge {
+                label.push('b');
+            }
+            if e.is_capping {
+                label.push('c');
+            }
+            if e.class > 0 {
+                label.push_str(&e.class.to_string());
+            }
+            if e.recent_class > 0 {
+                label.push_str(&e.recent_class.to_string());
+            }
+            if e.recent_size > 0 {
+                label.push_str(&e.recent_size.to_string());
+            }
+            label.push(']');
+            //digraph.edge_attributes()
+            agraph.edge(&f, &t).attributes().set("label", label.as_str(), true);
+            //digraph.edge(f, t);
         }
         for node in graph.node_indices() {
             let n = graph[node].borrow();
             let id = n.id.to_string();
-            digraph.node_named(id)
+            // build a label that displays all attributes compactly
+            // pretty print the blist so that it fits in the node
+            let mut label = String::new();
+            label.push_str(&format!("id: {}, dfsnum: {}, hi: {}, blist: ", n.id, n.dfsnum, n.hi));
+            let mut blist = String::new();
+            for bracket in n.blist.brackets.iter() {
+                blist.push_str(&format!("{} ", bracket.borrow()));
+            }
+            label.push_str(&format!("{{{}}}", blist));
+            agraph.node_named(id)
                 .set_shape(Shape::Rectangle)
-                .set_label(n.id.to_string().as_str());
+                .set_label(label.as_str());
         }
     }
     let mut file = File::create(file_name).unwrap();
