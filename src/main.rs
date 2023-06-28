@@ -119,7 +119,10 @@
 
 use petgraph::visit::Dfs;
 use petgraph::Graph;
+use petgraph::Undirected;
 use petgraph::graph::NodeIndex;
+//use petgraph::Direction::{Incoming, Outgoing};
+use petgraph::visit::DfsEvent;
 
 use dot_writer::{Color, DotWriter, Attributes, Shape, Style};
 
@@ -154,6 +157,7 @@ struct Edge {
     class: usize, // cycle equivalence class
     recent_size: usize, // size of bracket list when this edge was most recently the topmost bracket
     recent_class: usize, // equivalence class number of tree edge for which this edge was most recently the topmost bracket
+    is_tree_edge: bool, // is this edge a tree edge?
     is_backedge: bool, // is this edge a backedge?
     is_capping: bool, // is this edge a capping backedge?
 }
@@ -167,6 +171,7 @@ impl Edge {
             class: 0,
             recent_size: 0,
             recent_class: 0,
+            is_tree_edge: false,
             is_backedge: false,
             is_capping: false,
         }
@@ -226,7 +231,7 @@ impl BracketList {
 }
 
 // function that writes the petgraph to a dot format file
-fn write_dot(graph: &Graph<Rc<RefCell<Node>>, Rc<RefCell<Edge>>>, file_name: &str) {
+fn write_dot(graph: &Graph<Rc<RefCell<Node>>, Rc<RefCell<Edge>>, Undirected>, file_name: &str) {
     let mut output_bytes = Vec::new();
     {
         let mut writer = DotWriter::from(&mut output_bytes);
@@ -239,6 +244,9 @@ fn write_dot(graph: &Graph<Rc<RefCell<Node>>, Rc<RefCell<Edge>>>, file_name: &st
             // label the edge with a compact description of key attributes
             let mut label = String::new();
             label.push('[');
+            if e.is_tree_edge {
+                label.push('t');
+            }
             if e.is_backedge {
                 label.push('b');
             }
@@ -255,9 +263,7 @@ fn write_dot(graph: &Graph<Rc<RefCell<Node>>, Rc<RefCell<Edge>>>, file_name: &st
                 label.push_str(&e.recent_size.to_string());
             }
             label.push(']');
-            //digraph.edge_attributes()
             agraph.edge(&f, &t).attributes().set("label", label.as_str(), true);
-            //digraph.edge(f, t);
         }
         for node in graph.node_indices() {
             let n = graph[node].borrow();
@@ -339,29 +345,85 @@ fn write_dot(graph: &Graph<Rc<RefCell<Node>>, Rc<RefCell<Edge>>>, file_name: &st
 // 48:endfor
 // }
 
+use petgraph::visit::depth_first_search;
+
+fn dfs_tree(graph: &mut Graph<Rc<RefCell<Node>>, Rc<RefCell<Edge>>, Undirected>) -> Vec<NodeIndex> {
+    // get the source node of the graph
+    let source = graph.node_indices().next().unwrap();
+    let mut dfs_order = Vec::new();
+    //let mut back_edges = Vec::new();
+    let mut tree_edges = Vec::new();
+    
+    // run a depth first search and use DfsEvent matching to mark tree edges and back edges
+    // and record when we first encounter a node in the search in dfs_order
+    depth_first_search(&*graph, Some(source), |event| {
+        match event {
+            DfsEvent::Discover(node, _) => {
+                dfs_order.push(node);
+            }
+            DfsEvent::TreeEdge(from, to) => {
+                tree_edges.push((from, to));
+            }
+            //DfsEvent::BackEdge(from, to) => {
+            //    back_edges.push((from, to));
+            //}
+            _ => {}
+        }
+    });
+
+    println!("dfs_order: {:?}", dfs_order);
+    println!("tree_edges: {:?}", tree_edges);
+    //println!("back_edges: {:?}", back_edges);
+    for (from, to) in tree_edges {
+        // modify the edge in the graph to be marked as a backedge
+        let mut edge = graph.edge_weight_mut(graph.find_edge(from, to).unwrap()).unwrap().borrow_mut();
+        edge.is_tree_edge = true;
+        edge.is_backedge = false;
+    }
+
+    // for all edges that are not tree edges, mark them as backedges
+    for e in graph.edge_weights_mut() {
+        let mut edge = e.borrow_mut();
+        //let mut edge = graph.edge_weight_mut(graph.find_edge(from, to).unwrap()).unwrap().borrow_mut();
+        if !edge.is_tree_edge {
+            edge.is_backedge = true;
+        }
+        //edge.is_backedge = true;
+    }
+
+    for (i, node) in dfs_order.clone().into_iter().enumerate() {
+        let mut n = graph[node].borrow_mut();
+        n.dfsnum = i;
+        //n.hi = i;
+    }
+
+    dfs_order.reverse();
+    dfs_order
+}
+
+
 
 fn main() {
 
-    let mut graph = Graph::<Rc<RefCell<Node>>, Rc<RefCell<Edge>>>::new();
+    let mut graph = Graph::<Rc<RefCell<Node>>, Rc<RefCell<Edge>>, Undirected>::new_undirected();
 
-    let a = graph.add_node(Rc::new(RefCell::new(Node { id: 1, dfsnum: 0, blist: BracketList::new(), hi: 0 })));
-    // print the node index for node a
-    println!("{}", a.index());
-    
-    let b = graph.add_node(Rc::new(RefCell::new(Node { id: 2, dfsnum: 0, blist: BracketList::new(), hi: 0 })));
-    let c = graph.add_node(Rc::new(RefCell::new(Node { id: 3, dfsnum: 0, blist: BracketList::new(), hi: 0 })));
-    let d = graph.add_node(Rc::new(RefCell::new(Node { id: 4, dfsnum: 0, blist: BracketList::new(), hi: 0 })));
-    let e = graph.add_node(Rc::new(RefCell::new(Node { id: 5, dfsnum: 0, blist: BracketList::new(), hi: 0 })));
+    let a = graph.add_node(Rc::new(RefCell::new(Node { id: 0, dfsnum: 0, blist: BracketList::new(), hi: 0 })));
+    let b = graph.add_node(Rc::new(RefCell::new(Node { id: 1, dfsnum: 0, blist: BracketList::new(), hi: 0 })));
+    let c = graph.add_node(Rc::new(RefCell::new(Node { id: 2, dfsnum: 0, blist: BracketList::new(), hi: 0 })));
+    let d = graph.add_node(Rc::new(RefCell::new(Node { id: 3, dfsnum: 0, blist: BracketList::new(), hi: 0 })));
+    let e = graph.add_node(Rc::new(RefCell::new(Node { id: 4, dfsnum: 0, blist: BracketList::new(), hi: 0 })));
 
     // get node at a given index 0
     let node = graph[NodeIndex::new(0)].clone();
-    println!("got node and index 0 {}", node.borrow());
+    //println!("got node and index 0 {}", node.borrow());
 
     graph.add_edge(a, b, Rc::new(RefCell::new(Edge::new(0, 1))));
     graph.add_edge(a, c, Rc::new(RefCell::new(Edge::new(0, 2))));
     graph.add_edge(b, d, Rc::new(RefCell::new(Edge::new(1, 3))));
     graph.add_edge(c, d, Rc::new(RefCell::new(Edge::new(2, 3))));
     graph.add_edge(d, e, Rc::new(RefCell::new(Edge::new(3, 4))));
+    // add end to start
+    graph.add_edge(e, a, Rc::new(RefCell::new(Edge::new(4, 0))));
 
     // write the graph to dot format to file
     //let mut f = File::create("graph.dot").unwrap();
@@ -372,12 +434,7 @@ fn main() {
     //write!(f, "{:?}", Dot::with_config(&graph, &[Config::NodeShape(Shape::Square)])).unwrap();
     // call graphviz dot to render the file to graph.pdf
     //Command::new("dot").args(["-Tpdf", "graph.dot", "-o", "graph.pdf"]).status().unwrap();
-
-    let mut dfs = Dfs::new(&graph, a);
-    // print the dfs order
-    println!("Dfs order starting from node {:?}:", a);
-    while let Some(nx) = dfs.next(&graph) {
-        println!("{} {:?}", nx.index(), graph[nx]);
-    }
+    let dfs_rev_order = dfs_tree(&mut graph);
+    write_dot(&graph, "graph2.dot");
 
 }
