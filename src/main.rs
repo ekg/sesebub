@@ -243,15 +243,18 @@ fn write_dot(graph: &Graph<Rc<RefCell<Node>>, Rc<RefCell<Edge>>, Undirected>, fi
             let t = graph[NodeIndex::new(e.to)].borrow().id.to_string();
             // label the edge with a compact description of key attributes
             let mut label = String::new();
-            label.push('[');
+            //label.push('[');
             if e.is_tree_edge {
-                label.push('t');
+                // use tree emoji
+                label.push('🌲');
             }
             if e.is_backedge {
-                label.push('b');
+                // use back emoji
+                label.push('🔙');
             }
             if e.is_capping {
-                label.push('c');
+                // use hat emoji
+                label.push('🎩');
             }
             if e.class > 0 {
                 label.push_str(&e.class.to_string());
@@ -262,7 +265,7 @@ fn write_dot(graph: &Graph<Rc<RefCell<Node>>, Rc<RefCell<Edge>>, Undirected>, fi
             if e.recent_size > 0 {
                 label.push_str(&e.recent_size.to_string());
             }
-            label.push(']');
+            //label.push(']');
             agraph.edge(&f, &t).attributes().set("label", label.as_str(), true);
         }
         for node in graph.node_indices() {
@@ -271,7 +274,7 @@ fn write_dot(graph: &Graph<Rc<RefCell<Node>>, Rc<RefCell<Edge>>, Undirected>, fi
             // build a label that displays all attributes compactly
             // pretty print the blist so that it fits in the node
             let mut label = String::new();
-            label.push_str(&format!("id: {}, dfsnum: {}, hi: {}, blist: ", n.id, n.dfsnum, n.hi));
+            label.push_str(&format!("id: {}, dfsnum: {}, hi: {}\nblist: ", n.id, n.dfsnum, n.hi));
             let mut blist = String::new();
             for bracket in n.blist.brackets.iter() {
                 blist.push_str(&format!("{} ", bracket.borrow()));
@@ -436,5 +439,7 @@ fn main() {
     //Command::new("dot").args(["-Tpdf", "graph.dot", "-o", "graph.pdf"]).status().unwrap();
     let dfs_rev_order = dfs_tree(&mut graph);
     write_dot(&graph, "graph2.dot");
+
+    
 
 }
