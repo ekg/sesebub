@@ -553,29 +553,38 @@ fn dfs_tree(graph: &mut Graph<Rc<RefCell<Node>>, Rc<RefCell<Edge>>, Undirected>)
     dfs_order
 }
 
+fn add_graph_node(graph: &mut Graph<Rc<RefCell<Node>>, Rc<RefCell<Edge>>, Undirected>, id: usize) -> NodeIndex {
+    let node = Rc::new(RefCell::new(Node::new(id)));
+    graph.add_node(node)
+}
 
+fn add_graph_edge(graph: &mut Graph<Rc<RefCell<Node>>, Rc<RefCell<Edge>>, Undirected>, from: NodeIndex, to: NodeIndex) -> Rc<RefCell<Edge>> {
+    let edge = Rc::new(RefCell::new(Edge::new(from.index(), to.index())));
+    graph.add_edge(from, to, edge.clone());
+    edge
+}
 
 fn main() {
 
     let mut graph = Graph::<Rc<RefCell<Node>>, Rc<RefCell<Edge>>, Undirected>::new_undirected();
 
-    let a = graph.add_node(Rc::new(RefCell::new(Node::new(0))));
-    let b = graph.add_node(Rc::new(RefCell::new(Node::new(1))));
-    let c = graph.add_node(Rc::new(RefCell::new(Node::new(2))));
-    let d = graph.add_node(Rc::new(RefCell::new(Node::new(3))));
-    let e = graph.add_node(Rc::new(RefCell::new(Node::new(4))));
+    let a = add_graph_node(&mut graph, 0);
+    let b = add_graph_node(&mut graph, 1);
+    let c = add_graph_node(&mut graph, 2);
+    let d = add_graph_node(&mut graph, 3);
+    let e = add_graph_node(&mut graph, 4);
 
     // get node at a given index 0
     //let node = graph[NodeIndex::new(0)].clone();
     //println!("got node and index 0 {}", node.borrow());
 
-    graph.add_edge(a, b, Rc::new(RefCell::new(Edge::new(0, 1))));
-    graph.add_edge(a, c, Rc::new(RefCell::new(Edge::new(0, 2))));
-    graph.add_edge(b, d, Rc::new(RefCell::new(Edge::new(1, 3))));
-    graph.add_edge(c, d, Rc::new(RefCell::new(Edge::new(2, 3))));
-    graph.add_edge(d, e, Rc::new(RefCell::new(Edge::new(3, 4))));
+    add_graph_edge(&mut graph, a, b);
+    add_graph_edge(&mut graph, a, c);
+    add_graph_edge(&mut graph, b, d);
+    add_graph_edge(&mut graph, c, d);
+    add_graph_edge(&mut graph, d, e);
     // add end to start
-    graph.add_edge(e, a, Rc::new(RefCell::new(Edge::new(4, 0))));
+    add_graph_edge(&mut graph, e, a);
 
     // write the graph to dot format to file
     //let mut f = File::create("graph.dot").unwrap();
