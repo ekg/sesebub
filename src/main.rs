@@ -225,6 +225,10 @@ impl BracketList {
         Self { brackets: EdgeList::new() }
     }
 
+    fn size(&self) -> usize {
+        self.brackets.len()
+    }
+
     fn push(&mut self, edge: Rc<RefCell<Edge>>) {
         self.brackets.push(edge);
     }
@@ -233,10 +237,10 @@ impl BracketList {
         self.brackets.last().cloned()
     }
 
-    fn delete(&mut self, edge: &Rc<RefCell<Edge>>) {
+    fn delete(&mut self, edge: Rc<RefCell<Edge>>) {
         let mut i = 0;
         for bracket in self.brackets.iter() {
-            if Rc::ptr_eq(&bracket, edge) {
+            if Rc::ptr_eq(&edge, bracket) {
                 self.brackets.remove(i);
                 break;
             }
@@ -368,6 +372,7 @@ fn write_dot(graph: &Graph<Rc<RefCell<Node>>, Rc<RefCell<Edge>>, Undirected>, fi
 // }
 fn cycle_equivalence(graph: &mut Graph<Rc<RefCell<Node>>, Rc<RefCell<Edge>>, Undirected>,
                      rev_order: &Vec<NodeIndex>) {
+    let mut next_class = 1;
     // 1: perform an undirected depth-fist search on G
     // 2: for each node n in reverse depth-first order do
     // 3: /* compute n.hi */
@@ -377,55 +382,60 @@ fn cycle_equivalence(graph: &mut Graph<Rc<RefCell<Node>>, Rc<RefCell<Edge>>, Und
     // 7:   hichild := any child c of n having c.hi == hi_1;
     // 8:   hi_2 := min {c.hi | c is a child of n other than hichild };
     for ni in rev_order {
-        let node = &graph[*ni];
+        let node = graph[*ni].clone();
         let nid = node.borrow().id;
         let ndfsnum = node.borrow().dfsnum;
         println!("cycle_equivalence: node {}", nid);
         // undirected edges
-        let edges = RefCell::new(Vec::new());
-        let children = RefCell::new(Vec::new());
+        let mut edges = Vec::new();
+        let mut children = Vec::new();
         for edge in graph.edges(*ni) {
-            let e = edge.weight().borrow();
+            let edge = edge.weight().clone();
+            let e = edge.borrow();
+            //let e = edge.weight().borrow();
             // the traversal is undirected, so set from equal to the other node index
             // use nid to check which is the other node
             let from = if graph[NodeIndex::new(e.from)].borrow().id == nid { e.to } else { e.from };
             //let to = if graph[NodeIndex::new(e.from)].borrow().id == nid { e.from } else { e.to };
             println!("cycle_equivalence: edge {} -> {}", from, nid);
-            let other = graph[NodeIndex::new(from)].borrow();
-            if e.is_tree_edge && other.dfsnum > ndfsnum {
-                children.borrow_mut().push(graph[NodeIndex::new(from)].borrow());
+            let other = graph[NodeIndex::new(from)].clone();
+            if e.is_tree_edge && other.clone().borrow().dfsnum > ndfsnum {
+                children.push(graph[NodeIndex::new(from)].clone());
             }
             //let other = graph[NodeIndex::new(from)].borrow();
-            edges.borrow_mut().push((edge, other, from));
+            edges.push((edge.clone(), graph[NodeIndex::new(from)].clone(), from));
         }
         let mut hi_0 = usize::max_value();
         let mut hi_1 = usize::max_value();
         let mut hi_2 = usize::max_value();
         let mut hichild = 0;
-        for (edge, other, _) in edges.borrow().iter() {
-            let e = edge.weight().borrow();
+        for (edge, other, _) in edges.iter() {
+            let edge = edge.borrow();
+            let other = other.borrow();
             // get min of hi_0
-            if e.is_backedge {
+            if edge.is_backedge {
                 // print the backedge and dfsnum
-                println!("cycle_equivalence: backedge {} -> {} with dfsnum {}", e.from, e.to, other.dfsnum);
+                println!("cycle_equivalence: backedge {} -> {} with dfsnum {}", edge.from, edge.to, other.dfsnum);
                 hi_0 = hi_0.min(other.dfsnum);
             }
             // the other is a child of current node
             // the edge should be a tree edge no?
             if other.dfsnum > ndfsnum {
                 // print the tree edge and other.hi
-                println!("cycle_equivalence: tree edge {} -> {} with hi {}", e.from, e.to, other.hi);
+                println!("cycle_equivalence: tree edge {} -> {} with hi {}", edge.from, edge.to, other.hi);
                 hi_1 = hi_1.min(other.hi);
             }
         }
         node.borrow_mut().hi = hi_0.min(hi_1);
-        for child in children.borrow().iter() {
+        for child in children.iter() {
+            let child = child.borrow();
             println!("cycle_equivalence: child {} with hi {}", child.id, child.hi);
             if child.hi == hi_1 {
                 hichild = child.id;
             }
         }
-        for child in children.borrow().iter() {
+        for child in children.iter() {
+            let child = child.borrow();
             if child.id != hichild {
                 println!("cycle_equivalence: child {} with hi {}", child.id, child.hi);
                 hi_2 = hi_2.min(child.hi);
@@ -437,35 +447,54 @@ fn cycle_equivalence(graph: &mut Graph<Rc<RefCell<Node>>, Rc<RefCell<Edge>>, Und
         // 12:  for each child c of n do
         // 13:    n.blist := concat(c.blist, n.blist);
         // 14:  endfor
-        for child in children.borrow().iter() {
+        for child in children.iter() {
+            let child = child.borrow();
             println!("cycle_equivalence: child {} with blist {:?}", child.id, child.blist);
             node.borrow_mut().blist.concat(&child.blist.clone());
         }
-        // 16:  /* compute class for each backedge from n */
-        // 17:  for each backedge e from n do
-        // 18:    if e.to.hi < n.hi then
-        // 19:      /* create new bracket */
-        // 20:      b := (n, e.to);
-        // 21:      push(n.blist, b);
-        // 22:    else
-        // 23:      /* create capping backedge */
-        // 24:      d := (n, e.to);
-        // 25:      push(n.blist, d);
-        // 26:    endif
-        // 27:  endfor
-        for (edge, other, from) in edges.borrow().iter() {
-            let e = edge.weight().borrow();
-            if e.is_backedge && other.hi < graph[*ni].borrow().hi {
-                // create new bracket
-                println!("cycle_equivalence: new bracket {} -> {}", e.from, e.to);
-                node.borrow_mut().blist.push(edge.weight().clone());
-            } else if e.is_backedge {
-                // create capping backedge
-                //let d = Bracket::new(*ni, *from);
-                println!("cycle_equivalence: capping backedge {:?}", e);
-                node.borrow_mut().blist.push(edge.weight().clone());
+        // XXX TODO should this be over the children? what is the distinction between children and descendents
+        // for each capping backedge d from a descendent of n to n, delete backedge d from n.blist
+        for (edge_, other, _) in edges.iter() {
+            let edge = edge_.borrow();
+            let other = other.borrow();
+            if other.dfsnum > ndfsnum && edge.is_backedge && edge.is_capping {
+                println!("cycle_equivalence: capping backedge {} -> {}", edge.from, edge.to);
+                node.borrow_mut().blist.delete(edge_.clone());
             }
         }
+        // for each backedge b from a descendant of n to n
+        // delete it from the node bracketlist n.blist
+        // if b.class is not defined (==0), then set b.class to be a new class
+        for (edge, other, _) in edges.iter() {
+            let mut edge = edge.borrow_mut();
+            let other = other.borrow();
+            if other.dfsnum > ndfsnum && edge.is_backedge && edge.class == 0 {
+                edge.class = next_class;
+                next_class += 1;
+            }
+        }
+        // for each backedge e from n to an ancestor of n
+        // push the edge onto the node bracketlist n.blist
+        for (edge_, other, _) in edges.iter() {
+            let edge = edge_.borrow();
+            let other = other.borrow();
+            if other.dfsnum < ndfsnum && edge.is_backedge {
+                node.borrow_mut().blist.push(edge_.clone());
+            }
+        }
+        // if hi_2 < hi_0 then we create a capping backedge and add it to the graph
+        if hi_2 < hi_0 {
+            println!("cycle_equivalence: hi_2 < hi_0");
+            let mut e = Edge::new(nid, hi_2);
+            e.is_backedge = true;
+            e.is_capping = true;
+            e.class = next_class;
+            next_class += 1;
+            let edge = Rc::new(RefCell::new(e));
+            graph.add_edge(NodeIndex::new(hi_2), NodeIndex::new(nid), edge.clone());
+            node.borrow_mut().blist.push(edge.clone());
+        }
+        
     }
 }
 
