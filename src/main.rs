@@ -117,11 +117,11 @@
 // concat  — concatenate bl1 and bl2 .
 
 
-use petgraph::visit::Dfs;
+//use petgraph::visit::Dfs;
 use petgraph::Graph;
 use petgraph::Undirected;
 use petgraph::graph::NodeIndex;
-use petgraph::Direction::{Incoming, Outgoing};
+//use petgraph::Direction::{Incoming, Outgoing};
 use petgraph::visit::DfsEvent;
 
 use dot_writer::{Color, DotWriter, Attributes, Shape, Style};
@@ -133,7 +133,9 @@ use std::fmt;
 
 use std::rc::Rc;
 use std::cell::RefCell;
-use linked_list::LinkedList;
+//use std::collections::LinkedList;
+
+//use std::collections::linked_list::{Cursor, CursorMut};
 
 #[derive(Clone,Debug)]
 struct Node {
@@ -145,9 +147,9 @@ struct Node {
 
 // implement default constructor for Node that takes only the id
 impl Node {
-    fn new(id: usize) -> Node {
+    fn new(id_: usize) -> Node {
         Node {
-            id: id,
+            id: id_,
             dfsnum: 0,
             blist: BracketList::new(),
             hi: usize::max_value(),
@@ -172,6 +174,8 @@ struct Edge {
     is_tree_edge: bool, // is this edge a tree edge?
     is_backedge: bool, // is this edge a backedge?
     is_capping: bool, // is this edge a capping backedge?
+    // pointer to bracket list cell where this edge is stored
+    //blist_cell: Option<CursorMut<EdgeList>>,
 }
 
 // implement default constructor for Edge that takes only from and to
@@ -186,6 +190,7 @@ impl Edge {
             is_tree_edge: false,
             is_backedge: false,
             is_capping: false,
+//            blist_cell: None,
         }
     }
 }
@@ -197,9 +202,11 @@ impl fmt::Display for Edge {
     }
 }
 
+type EdgeList = Vec<Rc<RefCell<Edge>>>;
+
 #[derive(Clone,Debug)]
 struct BracketList {
-    brackets: LinkedList<Rc<RefCell<Edge>>>,
+    brackets: EdgeList,
 }
 
 // display method for BracketList
@@ -215,25 +222,25 @@ impl fmt::Display for BracketList {
 
 impl BracketList {
     fn new() -> Self {
-        Self { brackets: LinkedList::new() }
+        Self { brackets: EdgeList::new() }
     }
 
     fn push(&mut self, edge: Rc<RefCell<Edge>>) {
-        self.brackets.push_back(edge);
+        self.brackets.push(edge);
     }
 
     fn top(&self) -> Option<Rc<RefCell<Edge>>> {
-        self.brackets.back().cloned()
+        self.brackets.last().cloned()
     }
 
     fn delete(&mut self, edge: &Rc<RefCell<Edge>>) {
-        let mut cursor = self.brackets.cursor();
-        while let Some(e) = cursor.peek_next() {
-            if Rc::ptr_eq(e, edge) {
-                cursor.remove();
+        let mut i = 0;
+        for bracket in self.brackets.iter() {
+            if Rc::ptr_eq(&bracket, edge) {
+                self.brackets.remove(i);
                 break;
             }
-            cursor.next();
+            i += 1;
         }
     }
     
@@ -370,8 +377,9 @@ fn cycle_equivalence(graph: &mut Graph<Rc<RefCell<Node>>, Rc<RefCell<Edge>>, Und
     // 7:   hichild := any child c of n having c.hi == hi_1;
     // 8:   hi_2 := min {c.hi | c is a child of n other than hichild };
     for ni in rev_order {
-        let nid = graph[*ni].borrow().id;
-        let ndfsnum = graph[*ni].borrow().dfsnum;
+        let node = &graph[*ni];
+        let nid = node.borrow().id;
+        let ndfsnum = node.borrow().dfsnum;
         println!("cycle_equivalence: node {}", nid);
         // undirected edges
         let edges = RefCell::new(Vec::new());
@@ -410,7 +418,7 @@ fn cycle_equivalence(graph: &mut Graph<Rc<RefCell<Node>>, Rc<RefCell<Edge>>, Und
                 hi_1 = hi_1.min(other.hi);
             }
         }
-        graph[*ni].borrow_mut().hi = hi_0.min(hi_1);
+        node.borrow_mut().hi = hi_0.min(hi_1);
         for child in children.borrow().iter() {
             println!("cycle_equivalence: child {} with hi {}", child.id, child.hi);
             if child.hi == hi_1 {
@@ -429,7 +437,35 @@ fn cycle_equivalence(graph: &mut Graph<Rc<RefCell<Node>>, Rc<RefCell<Edge>>, Und
         // 12:  for each child c of n do
         // 13:    n.blist := concat(c.blist, n.blist);
         // 14:  endfor
-        
+        for child in children.borrow().iter() {
+            println!("cycle_equivalence: child {} with blist {:?}", child.id, child.blist);
+            node.borrow_mut().blist.concat(&child.blist.clone());
+        }
+        // 16:  /* compute class for each backedge from n */
+        // 17:  for each backedge e from n do
+        // 18:    if e.to.hi < n.hi then
+        // 19:      /* create new bracket */
+        // 20:      b := (n, e.to);
+        // 21:      push(n.blist, b);
+        // 22:    else
+        // 23:      /* create capping backedge */
+        // 24:      d := (n, e.to);
+        // 25:      push(n.blist, d);
+        // 26:    endif
+        // 27:  endfor
+        for (edge, other, from) in edges.borrow().iter() {
+            let e = edge.weight().borrow();
+            if e.is_backedge && other.hi < graph[*ni].borrow().hi {
+                // create new bracket
+                println!("cycle_equivalence: new bracket {} -> {}", e.from, e.to);
+                node.borrow_mut().blist.push(edge.weight().clone());
+            } else if e.is_backedge {
+                // create capping backedge
+                //let d = Bracket::new(*ni, *from);
+                println!("cycle_equivalence: capping backedge {:?}", e);
+                node.borrow_mut().blist.push(edge.weight().clone());
+            }
+        }
     }
 }
 
