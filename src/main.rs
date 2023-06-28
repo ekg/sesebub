@@ -121,7 +121,7 @@ use petgraph::visit::Dfs;
 use petgraph::Graph;
 use petgraph::Undirected;
 use petgraph::graph::NodeIndex;
-//use petgraph::Direction::{Incoming, Outgoing};
+use petgraph::Direction::{Incoming, Outgoing};
 use petgraph::visit::DfsEvent;
 
 use dot_writer::{Color, DotWriter, Attributes, Shape, Style};
@@ -141,6 +141,18 @@ struct Node {
     dfsnum: usize, // depth in DFS
     blist: BracketList, // list of bracket edges
     hi: usize, // highest dfsnum of any descendant
+}
+
+// implement default constructor for Node that takes only the id
+impl Node {
+    fn new(id: usize) -> Node {
+        Node {
+            id: id,
+            dfsnum: 0,
+            blist: BracketList::new(),
+            hi: usize::max_value(),
+        }
+    }
 }
 
 // display method for Node
@@ -347,6 +359,79 @@ fn write_dot(graph: &Graph<Rc<RefCell<Node>>, Rc<RefCell<Edge>>, Undirected>, fi
 // 47:  endif
 // 48:endfor
 // }
+fn cycle_equivalence(graph: &mut Graph<Rc<RefCell<Node>>, Rc<RefCell<Edge>>, Undirected>,
+                     rev_order: &Vec<NodeIndex>) {
+    // 1: perform an undirected depth-fist search on G
+    // 2: for each node n in reverse depth-first order do
+    // 3: /* compute n.hi */
+    // 4:   hi_0 := min {t.dfsnum | (n, t) is a backedge }; // where t is a predecessor of n in the DFS tree
+    // 5:   hi_1 := min {c.hi | c is a child of n };
+    // 6:   n.hi := min {hi_0, hi_1};
+    // 7:   hichild := any child c of n having c.hi == hi_1;
+    // 8:   hi_2 := min {c.hi | c is a child of n other than hichild };
+    for ni in rev_order {
+        let nid = graph[*ni].borrow().id;
+        let ndfsnum = graph[*ni].borrow().dfsnum;
+        println!("cycle_equivalence: node {}", nid);
+        // undirected edges
+        let edges = RefCell::new(Vec::new());
+        let children = RefCell::new(Vec::new());
+        for edge in graph.edges(*ni) {
+            let e = edge.weight().borrow();
+            // the traversal is undirected, so set from equal to the other node index
+            // use nid to check which is the other node
+            let from = if graph[NodeIndex::new(e.from)].borrow().id == nid { e.to } else { e.from };
+            //let to = if graph[NodeIndex::new(e.from)].borrow().id == nid { e.from } else { e.to };
+            println!("cycle_equivalence: edge {} -> {}", from, nid);
+            let other = graph[NodeIndex::new(from)].borrow();
+            if e.is_tree_edge && other.dfsnum > ndfsnum {
+                children.borrow_mut().push(graph[NodeIndex::new(from)].borrow());
+            }
+            //let other = graph[NodeIndex::new(from)].borrow();
+            edges.borrow_mut().push((edge, other, from));
+        }
+        let mut hi_0 = usize::max_value();
+        let mut hi_1 = usize::max_value();
+        let mut hi_2 = usize::max_value();
+        let mut hichild = 0;
+        for (edge, other, _) in edges.borrow().iter() {
+            let e = edge.weight().borrow();
+            // get min of hi_0
+            if e.is_backedge {
+                // print the backedge and dfsnum
+                println!("cycle_equivalence: backedge {} -> {} with dfsnum {}", e.from, e.to, other.dfsnum);
+                hi_0 = hi_0.min(other.dfsnum);
+            }
+            // the other is a child of current node
+            // the edge should be a tree edge no?
+            if other.dfsnum > ndfsnum {
+                // print the tree edge and other.hi
+                println!("cycle_equivalence: tree edge {} -> {} with hi {}", e.from, e.to, other.hi);
+                hi_1 = hi_1.min(other.hi);
+            }
+        }
+        graph[*ni].borrow_mut().hi = hi_0.min(hi_1);
+        for child in children.borrow().iter() {
+            println!("cycle_equivalence: child {} with hi {}", child.id, child.hi);
+            if child.hi == hi_1 {
+                hichild = child.id;
+            }
+        }
+        for child in children.borrow().iter() {
+            if child.id != hichild {
+                println!("cycle_equivalence: child {} with hi {}", child.id, child.hi);
+                hi_2 = hi_2.min(child.hi);
+            }
+        }
+        println!("cycle_equivalence: hi_0: {}, hi_1: {}, hi_2: {}", hi_0, hi_1, hi_2);
+        // 10:  /* compute bracketlist */
+        // 11:  n.blist := create();
+        // 12:  for each child c of n do
+        // 13:    n.blist := concat(c.blist, n.blist);
+        // 14:  endfor
+        
+    }
+}
 
 use petgraph::visit::depth_first_search;
 
@@ -410,14 +495,14 @@ fn main() {
 
     let mut graph = Graph::<Rc<RefCell<Node>>, Rc<RefCell<Edge>>, Undirected>::new_undirected();
 
-    let a = graph.add_node(Rc::new(RefCell::new(Node { id: 0, dfsnum: 0, blist: BracketList::new(), hi: 0 })));
-    let b = graph.add_node(Rc::new(RefCell::new(Node { id: 1, dfsnum: 0, blist: BracketList::new(), hi: 0 })));
-    let c = graph.add_node(Rc::new(RefCell::new(Node { id: 2, dfsnum: 0, blist: BracketList::new(), hi: 0 })));
-    let d = graph.add_node(Rc::new(RefCell::new(Node { id: 3, dfsnum: 0, blist: BracketList::new(), hi: 0 })));
-    let e = graph.add_node(Rc::new(RefCell::new(Node { id: 4, dfsnum: 0, blist: BracketList::new(), hi: 0 })));
+    let a = graph.add_node(Rc::new(RefCell::new(Node::new(0))));
+    let b = graph.add_node(Rc::new(RefCell::new(Node::new(1))));
+    let c = graph.add_node(Rc::new(RefCell::new(Node::new(2))));
+    let d = graph.add_node(Rc::new(RefCell::new(Node::new(3))));
+    let e = graph.add_node(Rc::new(RefCell::new(Node::new(4))));
 
     // get node at a given index 0
-    let node = graph[NodeIndex::new(0)].clone();
+    //let node = graph[NodeIndex::new(0)].clone();
     //println!("got node and index 0 {}", node.borrow());
 
     graph.add_edge(a, b, Rc::new(RefCell::new(Edge::new(0, 1))));
@@ -440,6 +525,8 @@ fn main() {
     let dfs_rev_order = dfs_tree(&mut graph);
     write_dot(&graph, "graph2.dot");
 
+    cycle_equivalence(&mut graph, &dfs_rev_order);
+    write_dot(&graph, "graph3.dot");
     
 
 }
