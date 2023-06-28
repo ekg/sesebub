@@ -214,7 +214,8 @@ impl fmt::Display for BracketList {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut result = String::new();
         for bracket in self.brackets.iter() {
-            result.push_str(&format!("{} ", bracket.borrow()));
+            // show the to and from ids of the edges
+            result.push_str(&format!("({}, {}), ", bracket.borrow().from, bracket.borrow().to));
         }
         write!(f, "{}", result)
     }
@@ -238,13 +239,11 @@ impl BracketList {
     }
 
     fn delete(&mut self, edge: Rc<RefCell<Edge>>) {
-        let mut i = 0;
-        for bracket in self.brackets.iter() {
+        for (i, bracket) in self.brackets.iter().enumerate() {
             if Rc::ptr_eq(&edge, bracket) {
                 self.brackets.remove(i);
                 break;
             }
-            i += 1;
         }
     }
     
@@ -297,12 +296,12 @@ fn write_dot(graph: &Graph<Rc<RefCell<Node>>, Rc<RefCell<Edge>>, Undirected>, fi
             // build a label that displays all attributes compactly
             // pretty print the blist so that it fits in the node
             let mut label = String::new();
-            label.push_str(&format!("id: {}, dfsnum: {}, hi: {}\nblist: ", n.id, n.dfsnum, n.hi));
-            let mut blist = String::new();
-            for bracket in n.blist.brackets.iter() {
-                blist.push_str(&format!("{} ", bracket.borrow()));
-            }
-            label.push_str(&format!("{{{}}}", blist));
+            label.push_str(&format!("id: {}, dfsnum: {}, hi: {}\nblist: {}", n.id, n.dfsnum, n.hi, n.blist));
+            //let mut blist = String::new();
+            //for bracket in n.blist.brackets.iter() {
+            //    blist.push_str(&format!("{} ", bracket.borrow()));
+            //}
+            //label.push_str(&format!("{{{}}}", blist));
             agraph.node_named(id)
                 .set_shape(Shape::Rectangle)
                 .set_label(label.as_str());
