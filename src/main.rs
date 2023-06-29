@@ -206,7 +206,14 @@ fn write_dot(graph: &Graph<Rc<RefCell<Node>>, Rc<RefCell<Edge>>, Undirected>,
 
 fn cycle_equivalence(graph: &mut Graph<Rc<RefCell<Node>>, Rc<RefCell<Edge>>, Undirected>,
                      rev_order: &Vec<NodeIndex>) {
-    let mut next_class = 1;
+    let mut curr_class = 1;
+    //closure for next_class()
+    let mut next_class = || {
+        let result = curr_class;
+        curr_class += 1;
+        result
+    };
+    
     // perform an undirected depth-fist search on G
     // for each node n in reverse depth-first order do
     // /* compute n.hi */
@@ -235,12 +242,13 @@ fn cycle_equivalence(graph: &mut Graph<Rc<RefCell<Node>>, Rc<RefCell<Edge>>, Und
             println!("cycle_equivalence: edge {} -> {}", from, nid);
             let other = graph[NodeIndex::new(from)].clone();
             // collect children
-            if e.is_tree_edge && other.clone().borrow().dfsnum == ndfsnum + 1 {
+            if e.is_tree_edge && other.borrow().dfsnum == ndfsnum + 1 {
                 children.push(graph[NodeIndex::new(from)].clone());
             }
             // collect all edges
             edges.push((edge.clone(), graph[NodeIndex::new(from)].clone(), from));
         }
+        write_dot(graph, format!("graph_{}.ce.1.dot", iter).as_str(), "png");
         let mut hi_0 = usize::max_value();
         let mut hi_1 = usize::max_value();
         let mut hi_2 = usize::max_value();
@@ -262,6 +270,7 @@ fn cycle_equivalence(graph: &mut Graph<Rc<RefCell<Node>>, Rc<RefCell<Edge>>, Und
                 hi_1 = hi_1.min(other.hi);
             }
         }
+        write_dot(graph, format!("graph_{}.ce.2.dot", iter).as_str(), "png");
         println!("cycle_equivalence: hi_1 {}", hi_1);
         node.borrow_mut().hi = hi_0.min(hi_1);
         println!("cycle_equivalence: node {} hi {}", nid, node.borrow().hi);
@@ -274,6 +283,7 @@ fn cycle_equivalence(graph: &mut Graph<Rc<RefCell<Node>>, Rc<RefCell<Edge>>, Und
                 break;
             }
         }
+        write_dot(graph, format!("graph_{}.ce.3.dot", iter).as_str(), "png");
         for child in children.iter() {
             let child = child.borrow();
             if child.id != hichild {
@@ -281,6 +291,7 @@ fn cycle_equivalence(graph: &mut Graph<Rc<RefCell<Node>>, Rc<RefCell<Edge>>, Und
                 hi_2 = hi_2.min(child.hi);
             }
         }
+        write_dot(graph, format!("graph_{}.ce.4.dot", iter).as_str(), "png");
         println!("cycle_equivalence: hi_0: {}, hi_1: {}, hi_2: {}", hi_0, hi_1, hi_2);
         // /* compute bracketlist */
         // n.blist := create();
@@ -292,6 +303,7 @@ fn cycle_equivalence(graph: &mut Graph<Rc<RefCell<Node>>, Rc<RefCell<Edge>>, Und
             println!("cycle_equivalence: child {} with blist {:?}", child.id, child.blist);
             node.borrow_mut().blist.concat(&child.blist.clone());
         }
+        write_dot(graph, format!("graph_{}.ce.5.dot", iter).as_str(), "png");
         // for each capping backedge d from a descendent of n to n, delete backedge d from n.blist
         println!("cycle_equivalence: deleting capping backedges from descendents from blist");
         for (edge_, other, _) in edges.iter() {
@@ -302,6 +314,7 @@ fn cycle_equivalence(graph: &mut Graph<Rc<RefCell<Node>>, Rc<RefCell<Edge>>, Und
                 node.borrow_mut().blist.delete(edge_.clone());
             }
         }
+        write_dot(graph, format!("graph_{}.ce.6.dot", iter).as_str(), "png");
         // for each backedge b from a descendant of n to n
         // delete it from the node bracketlist n.blist
         // if b.class is not defined (==0), then set b.class to be a new class
@@ -314,12 +327,12 @@ fn cycle_equivalence(graph: &mut Graph<Rc<RefCell<Node>>, Rc<RefCell<Edge>>, Und
                 println!("cycle_equivalence: delete backedge {} -> {}", edge.from, edge.to);
                 node.borrow_mut().blist.delete(edge_.clone());
                 if edge.class == 0 {
-                    edge.class = next_class;
-                    next_class += 1;
+                    edge.class = next_class();
                 }
                 println!("cycle_equivalence: set edge class {}", edge.class);
             }
         }
+        write_dot(graph, format!("graph_{}.ce.7.dot", iter).as_str(), "png");
         // for each backedge e from n to an ancestor of n
         // push the edge onto the node bracketlist n.blist
         for (edge_, other, _) in edges.iter() {
@@ -329,18 +342,19 @@ fn cycle_equivalence(graph: &mut Graph<Rc<RefCell<Node>>, Rc<RefCell<Edge>>, Und
                 node.borrow_mut().blist.push(edge_.clone());
             }
         }
+        write_dot(graph, format!("graph_{}.ce.8.dot", iter).as_str(), "png");
         // if hi_2 < hi_0 then we create a capping backedge and add it to the graph
         if hi_2 < hi_0 {
-            println!("cycle_equivalence: hi_2 < hi_0");
+            println!("cycle_equivalence: creating capping backedge because hi_2 = {} < hi_0 = {}", hi_2, hi_0);
             let mut e = Edge::new(nid, hi_2);
             e.is_backedge = true;
             e.is_capping = true;
-            e.class = next_class;
-            next_class += 1;
+            e.class = next_class();
             let edge = Rc::new(RefCell::new(e));
             graph.add_edge(NodeIndex::new(hi_2), NodeIndex::new(nid), edge.clone());
             node.borrow_mut().blist.push(edge.clone());
         }
+        write_dot(graph, format!("graph_{}.ce.9.dot", iter).as_str(), "png");
         // determine the class for edge from parent(n) to n
         // if n is not the root of dfs tree
         if ndfsnum != 0 {
@@ -358,6 +372,7 @@ fn cycle_equivalence(graph: &mut Graph<Rc<RefCell<Node>>, Rc<RefCell<Edge>>, Und
                 }
             }
             println!("cycle_equivalence: e is {:?}", e);
+            println!("cycle_equivalence: node blist {:?}", node.borrow().blist);
             // set b to the top of the node blist
             let b = node.borrow().blist.top().unwrap();
             // if b recent size is not the size of the node blist
@@ -367,14 +382,15 @@ fn cycle_equivalence(graph: &mut Graph<Rc<RefCell<Node>>, Rc<RefCell<Edge>>, Und
                 // set b.recent_size to the size of the node blist
                 b.borrow_mut().recent_size = node.borrow().blist.size();
                 // set b.class to a new class
-                b.borrow_mut().recent_class = next_class;
-                next_class += 1;
+                b.borrow_mut().recent_class = next_class();
             }
             // set e.class to b.recent_class
             e.borrow_mut().class = b.borrow().recent_class;
             println!("cycle_equivalence: e.class is {}", e.borrow().class);
+            if b.borrow().recent_size == 1 {
+                b.borrow_mut().class = e.borrow().class;
+            }
         }
-        println!("cycle_equivalence: end");
         iter += 1;
         write_dot(graph, format!("graph_{}.ce.dot", iter).as_str(), "png");
     }
@@ -558,8 +574,8 @@ fn make_example_fig1() -> Graph::<Rc<RefCell<Node>>, Rc<RefCell<Edge>>, Undirect
 
 fn main() {
 
-    //let mut graph = make_example_a();
-    let mut graph = make_example_fig1();
+    let mut graph = make_example_a();
+    //let mut graph = make_example_fig1();
     
     // write the graph to dot format to file
     //let mut f = File::create("graph.dot").unwrap();
