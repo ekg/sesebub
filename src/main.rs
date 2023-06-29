@@ -263,6 +263,7 @@ fn cycle_equivalence(graph: &mut Graph<Rc<RefCell<Node>>, Rc<RefCell<Edge>>, Und
             println!("cycle_equivalence: child {} with hi {}", child.id, child.hi);
             if child.hi == hi_1 {
                 hichild = child.id;
+                break;
             }
         }
         for child in children.iter() {
@@ -283,7 +284,6 @@ fn cycle_equivalence(graph: &mut Graph<Rc<RefCell<Node>>, Rc<RefCell<Edge>>, Und
             println!("cycle_equivalence: child {} with blist {:?}", child.id, child.blist);
             node.borrow_mut().blist.concat(&child.blist.clone());
         }
-        // XXX TODO should this be over the children? what is the distinction between children and descendents
         // for each capping backedge d from a descendent of n to n, delete backedge d from n.blist
         for (edge_, other, _) in edges.iter() {
             let edge = edge_.borrow();
@@ -301,7 +301,7 @@ fn cycle_equivalence(graph: &mut Graph<Rc<RefCell<Node>>, Rc<RefCell<Edge>>, Und
             let other = other.borrow();
             if other.dfsnum > ndfsnum && edge.is_backedge {
                 // delete it from the node bracketlist n.blist
-                println!("cycle_equivalence: backedge {} -> {}", edge.from, edge.to);
+                println!("cycle_equivalence: delete backedge {} -> {}", edge.from, edge.to);
                 node.borrow_mut().blist.delete(edge_.clone());
                 if edge.class == 0 {
                     edge.class = next_class;
@@ -340,7 +340,7 @@ fn cycle_equivalence(graph: &mut Graph<Rc<RefCell<Node>>, Rc<RefCell<Edge>>, Und
             for (edge_, other, _) in edges.iter() {
                 let edge = edge_.borrow();
                 let other = other.borrow();
-                if edge.is_tree_edge && other.dfsnum == ndfsnum - 1 {
+                if edge.is_tree_edge && other.dfsnum < ndfsnum {
                     println!("cycle_equivalence: found parent {} -> {}", edge.from, edge.to);
                     e = edge_.clone();
                     break;
@@ -370,10 +370,9 @@ fn cycle_equivalence(graph: &mut Graph<Rc<RefCell<Node>>, Rc<RefCell<Edge>>, Und
 use petgraph::visit::depth_first_search;
 
 fn dfs_tree(graph: &mut Graph<Rc<RefCell<Node>>, Rc<RefCell<Edge>>, Undirected>) -> Vec<NodeIndex> {
-    // get the source node of the graph
-    let source = graph.node_indices().next().unwrap();
+    // get the source node of the graph as the lowest node in the graph
+    let source = NodeIndex::new(0);
     let mut dfs_order = Vec::new();
-    //let mut back_edges = Vec::new();
     let mut tree_edges = Vec::new();
     
     // run a depth first search and use DfsEvent matching to mark tree edges and back edges
