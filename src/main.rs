@@ -502,9 +502,64 @@ fn make_example_a() -> Graph::<Rc<RefCell<Node>>, Rc<RefCell<Edge>>, Undirected>
     graph
 }
 
+fn make_example_fig1() -> Graph::<Rc<RefCell<Node>>, Rc<RefCell<Edge>>, Undirected> {
+    let mut graph = Graph::<Rc<RefCell<Node>>, Rc<RefCell<Edge>>, Undirected>::new_undirected();
+    let n0 = add_graph_node(&mut graph, 0);
+    let n1 = add_graph_node(&mut graph, 1);
+    let n2 = add_graph_node(&mut graph, 2);
+    let n3 = add_graph_node(&mut graph, 3);
+    let n4 = add_graph_node(&mut graph, 4);
+    let n5 = add_graph_node(&mut graph, 5);
+    let n6 = add_graph_node(&mut graph, 6);
+    let n7 = add_graph_node(&mut graph, 7);
+    let n8 = add_graph_node(&mut graph, 8);
+    let n9 = add_graph_node(&mut graph, 9);
+    let n10 = add_graph_node(&mut graph, 10);
+    let n11 = add_graph_node(&mut graph, 11);
+    let n12 = add_graph_node(&mut graph, 12);
+    let n13 = add_graph_node(&mut graph, 13);
+    let n14 = add_graph_node(&mut graph, 14);
+    let n15 = add_graph_node(&mut graph, 15);
+    // 0 -> 1 and 2
+    add_graph_edge(&mut graph, n0, n1);
+    add_graph_edge(&mut graph, n0, n2);
+    // 1 -> 3 and 13
+    add_graph_edge(&mut graph, n1, n3);
+    add_graph_edge(&mut graph, n1, n13);
+    // 2 -> 4
+    add_graph_edge(&mut graph, n2, n4);
+    // 4 -> 6 and 8
+    add_graph_edge(&mut graph, n4, n6);
+    add_graph_edge(&mut graph, n4, n8);
+    // 3 -> 5
+    add_graph_edge(&mut graph, n3, n5);
+    // 5 -> 7 and 9
+    add_graph_edge(&mut graph, n5, n7);
+    add_graph_edge(&mut graph, n5, n9);
+    // 7 -> 11
+    add_graph_edge(&mut graph, n7, n11);
+    // 9 -> 11
+    add_graph_edge(&mut graph, n9, n11);
+    // 6 -> 10
+    add_graph_edge(&mut graph, n6, n10);
+    // 8 -> 10 and 12
+    add_graph_edge(&mut graph, n8, n10);
+    add_graph_edge(&mut graph, n8, n12);
+    // 11 -> 13
+    add_graph_edge(&mut graph, n11, n13);
+    // 12 -> 14
+    add_graph_edge(&mut graph, n12, n14);
+    // 13 -> 15
+    add_graph_edge(&mut graph, n13, n15);
+    // 14 -> 15
+    add_graph_edge(&mut graph, n14, n15);
+    graph
+}
+
 fn main() {
 
-    let mut graph = make_example_a();
+    //let mut graph = make_example_a();
+    let mut graph = make_example_fig1();
     
     // write the graph to dot format to file
     //let mut f = File::create("graph.dot").unwrap();
