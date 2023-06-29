@@ -279,12 +279,15 @@ fn write_dot(graph: &Graph<Rc<RefCell<Node>>, Rc<RefCell<Edge>>, Undirected>, fi
                 label.push('🎩');
             }
             if e.class > 0 {
+                label.push_str(" c:");
                 label.push_str(&e.class.to_string());
             }
             if e.recent_class > 0 {
+                label.push_str(" r:");
                 label.push_str(&e.recent_class.to_string());
             }
             if e.recent_size > 0 {
+                label.push_str(" s:");
                 label.push_str(&e.recent_size.to_string());
             }
             //label.push(']');
@@ -493,7 +496,39 @@ fn cycle_equivalence(graph: &mut Graph<Rc<RefCell<Node>>, Rc<RefCell<Edge>>, Und
             graph.add_edge(NodeIndex::new(hi_2), NodeIndex::new(nid), edge.clone());
             node.borrow_mut().blist.push(edge.clone());
         }
-        
+        // determine the class for edge from parent(n) to n
+        // if n is not the root of dfs tree
+        if ndfsnum != 0 {
+            println!("cycle_equivalence: n is not the root of dfs tree");
+            // find the parent, which will be a node with a tree edge to this node where the dfsnum is one less
+            // let e be the tree edge from parent(n) to n
+            let mut e = Rc::new(RefCell::new(Edge::new(0, 0)));
+            for (edge_, other, _) in edges.iter() {
+                let edge = edge_.borrow();
+                let other = other.borrow();
+                if edge.is_tree_edge && other.dfsnum == ndfsnum - 1 {
+                    e = edge_.clone();
+                    break;
+                }
+            }
+            println!("cycle_equivalence: e is {:?}", e);
+            // set b to the top of the node blist
+            let b = node.borrow().blist.top().unwrap();
+            // if b recent size is not the size of the node blist
+            println!("cycle_equivalence: b recent size {} node blist size {}", b.borrow().recent_size, node.borrow().blist.size());
+            if b.borrow().recent_size != node.borrow().blist.size() {
+                println!("cycle_equivalence: b recent size is not the size of the node blist");
+                // set b.recent_size to the size of the node blist
+                b.borrow_mut().recent_size = node.borrow().blist.size();
+                // set b.class to a new class
+                b.borrow_mut().recent_class = next_class;
+                next_class += 1;
+            }
+            // set e.class to b.recent_class
+            e.borrow_mut().class = b.borrow().recent_class;
+            println!("cycle_equivalence: e.class is {}", e.borrow().class);
+        }
+        println!("cycle_equivalence: end");
     }
 }
 
