@@ -599,7 +599,7 @@ fn add_graph_edge(graph: &mut Graph<Rc<RefCell<Node>>, Rc<RefCell<Edge>>, Undire
     edge
 }
 
-fn main() {
+fn make_example_0() -> Graph<Rc<RefCell<Node>>, Rc<RefCell<Edge>>, Undirected> {
 
     let mut graph = Graph::<Rc<RefCell<Node>>, Rc<RefCell<Edge>>, Undirected>::new_undirected();
 
@@ -621,6 +621,44 @@ fn main() {
     // add end to start
     add_graph_edge(&mut graph, e, a);
 
+    graph
+}
+
+
+fn make_example_a() -> Graph::<Rc<RefCell<Node>>, Rc<RefCell<Edge>>, Undirected> {
+    let mut graph = Graph::<Rc<RefCell<Node>>, Rc<RefCell<Edge>>, Undirected>::new_undirected();
+    let n0 = add_graph_node(&mut graph, 0);
+    let n1 = add_graph_node(&mut graph, 1);
+    let n2 = add_graph_node(&mut graph, 2);
+    let n3 = add_graph_node(&mut graph, 3);
+    let n4 = add_graph_node(&mut graph, 4);
+    let n5 = add_graph_node(&mut graph, 5);
+    let n6 = add_graph_node(&mut graph, 6);
+    let n7 = add_graph_node(&mut graph, 7);
+    // link them up in a line
+    add_graph_edge(&mut graph, n0, n1);
+    add_graph_edge(&mut graph, n1, n2);
+    add_graph_edge(&mut graph, n2, n3);
+    add_graph_edge(&mut graph, n3, n4);
+    add_graph_edge(&mut graph, n4, n5);
+    add_graph_edge(&mut graph, n5, n6);
+    add_graph_edge(&mut graph, n6, n7);
+    // add back edges
+    // start to end
+    add_graph_edge(&mut graph, n7, n0);
+    // 1 to 4
+    add_graph_edge(&mut graph, n1, n4);
+    // 2 to 3
+    add_graph_edge(&mut graph, n2, n3);
+    // 5 to 6
+    add_graph_edge(&mut graph, n5, n6);
+    graph
+}
+
+fn main() {
+
+    let mut graph = make_example_0();
+    
     // write the graph to dot format to file
     //let mut f = File::create("graph.dot").unwrap();
     // use the dot_writer crate to write the graph to file
