@@ -507,6 +507,7 @@ fn cycle_equivalence(graph: &mut Graph<Rc<RefCell<Node>>, Rc<RefCell<Edge>>, Und
                 let edge = edge_.borrow();
                 let other = other.borrow();
                 if edge.is_tree_edge && other.dfsnum == ndfsnum - 1 {
+                    println!("cycle_equivalence: found parent {} -> {}", edge.from, edge.to);
                     e = edge_.clone();
                     break;
                 }
@@ -657,7 +658,7 @@ fn make_example_a() -> Graph::<Rc<RefCell<Node>>, Rc<RefCell<Edge>>, Undirected>
 
 fn main() {
 
-    let mut graph = make_example_0();
+    let mut graph = make_example_a();
     
     // write the graph to dot format to file
     //let mut f = File::create("graph.dot").unwrap();

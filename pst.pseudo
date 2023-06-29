@@ -1,0 +1,51 @@
+Procedttre CycleEquiv (G)
+{
+1: perform an undirected depth-fist search
+2: for each node n in reverse depth-first order do
+3: /* compute n.hi */
+4:   hi_0 := min {t.dfsnum | (n, t) is a backedge };
+5:   hi_1 := min {c.hi | c is a child of n };
+6:   n.hi := min {hi_0, hi_1};
+7:   hichild := any child c of n having c.hi == hi_1;
+8:   hi_2 := min {c.hi | c is a child of n other than hichild };
+9:
+10:  /* compute bracketlist */
+11:  n.blist := create();
+12:  for each child c of n do
+13:    n.blist := concat(c.blist, n.blist);
+14:  endfor
+15:  for each capping backedge d from a descendant of n to n do
+16:    delete(n.blist, d);
+17:  endfor
+18:  for each backedge b from a descendant of n to n do
+19:    delete(n.blist, b);
+20:    if b.class undefined then
+21:      b.class := new_class();
+22:    endif
+23:  endfor
+24:  for each backedge e from n to an ancestor of n do
+25:    push(n.blist, e);
+26:  endfor
+27:  if hi_2 < hi_0 then
+28:    /* create capping backedge */
+29:    d := (n, node[hi_2]);
+30:    push(n.blist, d);
+31:  endif
+32:
+33:  /* determine class for edge from parent(n) to n */
+34:  if n is not the root of dfs tree then
+35:    let e be the tree edge from parent(n) to n;
+36:    b := top(n.blist);
+37:    if b.recentSize != size(n.blist) then
+38:      b.recentSize := size(n.blist);
+39:      b.recentClass := new_class();
+40:    endif
+41:    e.class := b.recentClass;
+42:
+43:    /* check for e,b equivalence */
+44:    if b.recentSize == 1 then
+45:      b.class := e.class;
+46:    endif
+47:  endif
+48:endfor
+}
