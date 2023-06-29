@@ -251,7 +251,7 @@ fn cycle_equivalence(graph: &mut Graph<Rc<RefCell<Node>>, Rc<RefCell<Edge>>, Und
             }
             // the other is a child of current node
             // the edge should be a tree edge no?
-            if other.dfsnum > ndfsnum {
+            if other.dfsnum == ndfsnum + 1 {
                 // print the tree edge and other.hi
                 println!("cycle_equivalence: tree edge {} -> {} with hi {}", edge.from, edge.to, other.hi);
                 hi_1 = hi_1.min(other.hi);
@@ -296,12 +296,17 @@ fn cycle_equivalence(graph: &mut Graph<Rc<RefCell<Node>>, Rc<RefCell<Edge>>, Und
         // for each backedge b from a descendant of n to n
         // delete it from the node bracketlist n.blist
         // if b.class is not defined (==0), then set b.class to be a new class
-        for (edge, other, _) in edges.iter() {
-            let mut edge = edge.borrow_mut();
+        for (edge_, other, _) in edges.iter() {
+            let mut edge = edge_.borrow_mut();
             let other = other.borrow();
-            if other.dfsnum > ndfsnum && edge.is_backedge && edge.class == 0 {
-                edge.class = next_class;
-                next_class += 1;
+            if other.dfsnum > ndfsnum && edge.is_backedge {
+                // delete it from the node bracketlist n.blist
+                println!("cycle_equivalence: backedge {} -> {}", edge.from, edge.to);
+                node.borrow_mut().blist.delete(edge_.clone());
+                if edge.class == 0 {
+                    edge.class = next_class;
+                    next_class += 1;
+                }
             }
         }
         // for each backedge e from n to an ancestor of n
