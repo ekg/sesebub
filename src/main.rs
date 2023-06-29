@@ -148,11 +148,11 @@ fn write_dot(graph: &Graph<Rc<RefCell<Node>>, Rc<RefCell<Edge>>, Undirected>, fi
             //label.push('[');
             if e.is_tree_edge {
                 // use tree emoji
-                label.push('🌲');
+                label.push('🌿');
             }
             if e.is_backedge {
                 // use back emoji
-                label.push('🔙');
+                label.push('🙃');
             }
             if e.is_capping {
                 // use hat emoji
@@ -251,17 +251,20 @@ fn cycle_equivalence(graph: &mut Graph<Rc<RefCell<Node>>, Rc<RefCell<Edge>>, Und
             }
             // the other is a child of current node
             // the edge should be a tree edge no?
-            if other.dfsnum == ndfsnum + 1 {
+            if other.dfsnum > ndfsnum && edge.is_tree_edge {
                 // print the tree edge and other.hi
                 println!("cycle_equivalence: tree edge {} -> {} with hi {}", edge.from, edge.to, other.hi);
                 hi_1 = hi_1.min(other.hi);
             }
         }
+        println!("cycle_equivalence: hi_1 {}", hi_1);
         node.borrow_mut().hi = hi_0.min(hi_1);
+        println!("cycle_equivalence: node {} hi {}", nid, node.borrow().hi);
         for child in children.iter() {
             let child = child.borrow();
             println!("cycle_equivalence: child {} with hi {}", child.id, child.hi);
             if child.hi == hi_1 {
+                println!("cycle_equivalence: hichild {}", child.id);
                 hichild = child.id;
                 break;
             }
@@ -285,17 +288,19 @@ fn cycle_equivalence(graph: &mut Graph<Rc<RefCell<Node>>, Rc<RefCell<Edge>>, Und
             node.borrow_mut().blist.concat(&child.blist.clone());
         }
         // for each capping backedge d from a descendent of n to n, delete backedge d from n.blist
+        println!("cycle_equivalence: deleting capping backedges from descendents from blist");
         for (edge_, other, _) in edges.iter() {
             let edge = edge_.borrow();
             let other = other.borrow();
             if other.dfsnum > ndfsnum && edge.is_backedge && edge.is_capping {
-                println!("cycle_equivalence: capping backedge {} -> {}", edge.from, edge.to);
+                println!("cycle_equivalence: delete capping backedge {} -> {}", edge.from, edge.to);
                 node.borrow_mut().blist.delete(edge_.clone());
             }
         }
         // for each backedge b from a descendant of n to n
         // delete it from the node bracketlist n.blist
         // if b.class is not defined (==0), then set b.class to be a new class
+        println!("cycle_equivalence: deleting backedges from descendents from blist");
         for (edge_, other, _) in edges.iter() {
             let mut edge = edge_.borrow_mut();
             let other = other.borrow();
@@ -307,6 +312,7 @@ fn cycle_equivalence(graph: &mut Graph<Rc<RefCell<Node>>, Rc<RefCell<Edge>>, Und
                     edge.class = next_class;
                     next_class += 1;
                 }
+                println!("cycle_equivalence: set edge class {}", edge.class);
             }
         }
         // for each backedge e from n to an ancestor of n
@@ -350,7 +356,7 @@ fn cycle_equivalence(graph: &mut Graph<Rc<RefCell<Node>>, Rc<RefCell<Edge>>, Und
             // set b to the top of the node blist
             let b = node.borrow().blist.top().unwrap();
             // if b recent size is not the size of the node blist
-            println!("cycle_equivalence: b recent size {} node blist size {}", b.borrow().recent_size, node.borrow().blist.size());
+            println!("cycle_equivalence: b is {:?} b recent size {} node blist size {}", (b.borrow().from, b.borrow().to), b.borrow().recent_size, node.borrow().blist.size());
             if b.borrow().recent_size != node.borrow().blist.size() {
                 println!("cycle_equivalence: b recent size is not the size of the node blist");
                 // set b.recent_size to the size of the node blist
