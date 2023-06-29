@@ -242,7 +242,7 @@ fn cycle_equivalence(graph: &mut Graph<Rc<RefCell<Node>>, Rc<RefCell<Edge>>, Und
             println!("cycle_equivalence: edge {} -> {}", from, nid);
             let other = graph[NodeIndex::new(from)].clone();
             // collect children
-            if e.is_tree_edge && other.borrow().dfsnum == ndfsnum + 1 {
+            if e.is_tree_edge && other.borrow().dfsnum > ndfsnum {
                 children.push(graph[NodeIndex::new(from)].clone());
             }
             // collect all edges
