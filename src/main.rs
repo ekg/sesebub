@@ -224,7 +224,7 @@ fn cycle_equivalence(graph: &mut Graph<Rc<RefCell<Node>>, Rc<RefCell<Edge>>, Und
     //    hi_2 := min {c.hi | c is a child of n other than hichild };
     // print the graph
     let mut iter = 0; // put iter in the file name
-    write_dot(graph, format!("graph_{}.ce.dot", iter).as_str(), "png");
+    //write_dot(graph, format!("graph_{}.ce.dot", iter).as_str(), "png");
     for ni in rev_order {
         let node = graph[*ni].clone();
         let nid = node.borrow().id;
@@ -248,7 +248,7 @@ fn cycle_equivalence(graph: &mut Graph<Rc<RefCell<Node>>, Rc<RefCell<Edge>>, Und
             // collect all edges
             edges.push((edge.clone(), graph[NodeIndex::new(from)].clone(), from));
         }
-        write_dot(graph, format!("graph_{}.ce.1.dot", iter).as_str(), "png");
+        //write_dot(graph, format!("graph_{}.ce.1.dot", iter).as_str(), "png");
         let mut hi_0 = usize::max_value();
         let mut hi_1 = usize::max_value();
         let mut hi_2 = usize::max_value();
@@ -270,7 +270,7 @@ fn cycle_equivalence(graph: &mut Graph<Rc<RefCell<Node>>, Rc<RefCell<Edge>>, Und
                 hi_1 = hi_1.min(other.hi);
             }
         }
-        write_dot(graph, format!("graph_{}.ce.2.dot", iter).as_str(), "png");
+        //write_dot(graph, format!("graph_{}.ce.2.dot", iter).as_str(), "png");
         println!("cycle_equivalence: hi_1 {}", hi_1);
         node.borrow_mut().hi = hi_0.min(hi_1);
         println!("cycle_equivalence: node {} hi {}", nid, node.borrow().hi);
@@ -283,7 +283,7 @@ fn cycle_equivalence(graph: &mut Graph<Rc<RefCell<Node>>, Rc<RefCell<Edge>>, Und
                 break;
             }
         }
-        write_dot(graph, format!("graph_{}.ce.3.dot", iter).as_str(), "png");
+        //write_dot(graph, format!("graph_{}.ce.3.dot", iter).as_str(), "png");
         for child in children.iter() {
             let child = child.borrow();
             if child.id != hichild {
@@ -291,7 +291,7 @@ fn cycle_equivalence(graph: &mut Graph<Rc<RefCell<Node>>, Rc<RefCell<Edge>>, Und
                 hi_2 = hi_2.min(child.hi);
             }
         }
-        write_dot(graph, format!("graph_{}.ce.4.dot", iter).as_str(), "png");
+        //write_dot(graph, format!("graph_{}.ce.4.dot", iter).as_str(), "png");
         println!("cycle_equivalence: hi_0: {}, hi_1: {}, hi_2: {}", hi_0, hi_1, hi_2);
         // /* compute bracketlist */
         // n.blist := create();
@@ -303,7 +303,7 @@ fn cycle_equivalence(graph: &mut Graph<Rc<RefCell<Node>>, Rc<RefCell<Edge>>, Und
             println!("cycle_equivalence: child {} with blist {:?}", child.id, child.blist);
             node.borrow_mut().blist.concat(&child.blist.clone());
         }
-        write_dot(graph, format!("graph_{}.ce.5.dot", iter).as_str(), "png");
+        //write_dot(graph, format!("graph_{}.ce.5.dot", iter).as_str(), "png");
         // for each capping backedge d from a descendent of n to n, delete backedge d from n.blist
         println!("cycle_equivalence: deleting capping backedges from descendents from blist");
         for (edge_, other, _) in edges.iter() {
@@ -314,7 +314,7 @@ fn cycle_equivalence(graph: &mut Graph<Rc<RefCell<Node>>, Rc<RefCell<Edge>>, Und
                 node.borrow_mut().blist.delete(edge_.clone());
             }
         }
-        write_dot(graph, format!("graph_{}.ce.6.dot", iter).as_str(), "png");
+        //write_dot(graph, format!("graph_{}.ce.6.dot", iter).as_str(), "png");
         // for each backedge b from a descendant of n to n
         // delete it from the node bracketlist n.blist
         // if b.class is not defined (==0), then set b.class to be a new class
@@ -332,7 +332,7 @@ fn cycle_equivalence(graph: &mut Graph<Rc<RefCell<Node>>, Rc<RefCell<Edge>>, Und
                 println!("cycle_equivalence: set edge class {}", edge.class);
             }
         }
-        write_dot(graph, format!("graph_{}.ce.7.dot", iter).as_str(), "png");
+        //write_dot(graph, format!("graph_{}.ce.7.dot", iter).as_str(), "png");
         // for each backedge e from n to an ancestor of n
         // push the edge onto the node bracketlist n.blist
         for (edge_, other, _) in edges.iter() {
@@ -342,7 +342,7 @@ fn cycle_equivalence(graph: &mut Graph<Rc<RefCell<Node>>, Rc<RefCell<Edge>>, Und
                 node.borrow_mut().blist.push(edge_.clone());
             }
         }
-        write_dot(graph, format!("graph_{}.ce.8.dot", iter).as_str(), "png");
+        //write_dot(graph, format!("graph_{}.ce.8.dot", iter).as_str(), "png");
         // if hi_2 < hi_0 then we create a capping backedge and add it to the graph
         if hi_2 < hi_0 {
             println!("cycle_equivalence: creating capping backedge because hi_2 = {} < hi_0 = {}", hi_2, hi_0);
@@ -354,7 +354,7 @@ fn cycle_equivalence(graph: &mut Graph<Rc<RefCell<Node>>, Rc<RefCell<Edge>>, Und
             graph.add_edge(NodeIndex::new(hi_2), NodeIndex::new(nid), edge.clone());
             node.borrow_mut().blist.push(edge.clone());
         }
-        write_dot(graph, format!("graph_{}.ce.9.dot", iter).as_str(), "png");
+        //write_dot(graph, format!("graph_{}.ce.9.dot", iter).as_str(), "png");
         // determine the class for edge from parent(n) to n
         // if n is not the root of dfs tree
         if ndfsnum != 0 {
@@ -392,7 +392,7 @@ fn cycle_equivalence(graph: &mut Graph<Rc<RefCell<Node>>, Rc<RefCell<Edge>>, Und
             }
         }
         iter += 1;
-        write_dot(graph, format!("graph_{}.ce.dot", iter).as_str(), "png");
+        //write_dot(graph, format!("graph_{}.ce.dot", iter).as_str(), "png");
     }
 }
 
@@ -561,6 +561,8 @@ fn make_example_fig1() -> Graph::<Rc<RefCell<Node>>, Rc<RefCell<Edge>>, Undirect
     // 8 -> 10 and 12
     add_graph_edge(&mut graph, n8, n10);
     add_graph_edge(&mut graph, n8, n12);
+    // 10 -> 12
+    add_graph_edge(&mut graph, n10, n12);
     // 11 -> 13
     add_graph_edge(&mut graph, n11, n13);
     // 12 -> 14
@@ -574,8 +576,8 @@ fn make_example_fig1() -> Graph::<Rc<RefCell<Node>>, Rc<RefCell<Edge>>, Undirect
 
 fn main() {
 
-    let mut graph = make_example_a();
-    //let mut graph = make_example_fig1();
+    //let mut graph = make_example_a();
+    let mut graph = make_example_fig1();
     
     // write the graph to dot format to file
     //let mut f = File::create("graph.dot").unwrap();
