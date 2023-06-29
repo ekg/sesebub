@@ -133,7 +133,9 @@ impl BracketList {
 }
 
 // function that writes the petgraph to a dot format file
-fn write_dot(graph: &Graph<Rc<RefCell<Node>>, Rc<RefCell<Edge>>, Undirected>, file_name: &str) {
+fn write_dot(graph: &Graph<Rc<RefCell<Node>>, Rc<RefCell<Edge>>, Undirected>,
+             file_name: &str,
+             ftype: &str) {
     let mut output_bytes = Vec::new();
     {
         let mut writer = DotWriter::from(&mut output_bytes);
@@ -194,10 +196,10 @@ fn write_dot(graph: &Graph<Rc<RefCell<Node>>, Rc<RefCell<Edge>>, Undirected>, fi
     file.write_all(&output_bytes).unwrap();
     // run dot to generate pdf
     Command::new("dot")
-        .arg("-Tpdf")
+        .arg(format!("-T{}", ftype).as_str())
         .arg(file_name)
         .arg("-o")
-        .arg(file_name.to_owned() + ".pdf")
+        .arg(file_name.to_owned() + format!(".{}", ftype).as_str())
         .output()
         .expect("failed to execute process");
 }
@@ -213,6 +215,9 @@ fn cycle_equivalence(graph: &mut Graph<Rc<RefCell<Node>>, Rc<RefCell<Edge>>, Und
     //    n.hi := min {hi_0, hi_1};
     //    hichild := any child c of n having c.hi == hi_1;
     //    hi_2 := min {c.hi | c is a child of n other than hichild };
+    // print the graph
+    let mut iter = 0; // put iter in the file name
+    write_dot(graph, format!("graph_{}.ce.dot", iter).as_str(), "png");
     for ni in rev_order {
         let node = graph[*ni].clone();
         let nid = node.borrow().id;
@@ -370,6 +375,8 @@ fn cycle_equivalence(graph: &mut Graph<Rc<RefCell<Node>>, Rc<RefCell<Edge>>, Und
             println!("cycle_equivalence: e.class is {}", e.borrow().class);
         }
         println!("cycle_equivalence: end");
+        iter += 1;
+        write_dot(graph, format!("graph_{}.ce.dot", iter).as_str(), "png");
     }
 }
 
@@ -503,16 +510,16 @@ fn main() {
     //let mut f = File::create("graph.dot").unwrap();
     // use the dot_writer crate to write the graph to file
     // using square nodes and the default style
-    write_dot(&graph, "graph.dot");
+    write_dot(&graph, "graph.dot", "pdf");
     
     //write!(f, "{:?}", Dot::with_config(&graph, &[Config::NodeShape(Shape::Square)])).unwrap();
     // call graphviz dot to render the file to graph.pdf
     //Command::new("dot").args(["-Tpdf", "graph.dot", "-o", "graph.pdf"]).status().unwrap();
     let dfs_rev_order = dfs_tree(&mut graph);
-    write_dot(&graph, "graph2.dot");
+    write_dot(&graph, "graph2.dot", "pdf");
 
     cycle_equivalence(&mut graph, &dfs_rev_order);
-    write_dot(&graph, "graph3.dot");
+    write_dot(&graph, "graph3.dot", "pdf");
     
 
 }
