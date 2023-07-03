@@ -40,7 +40,7 @@ impl Node {
 // display method for Node
 impl fmt::Display for Node {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Node: id: {}, dfsnum: {}, hi: {}, blist: {}", self.id, self.dfsnum, self.hi, self.blist)
+        write!(f, "Node: id: {}, dfs: {}, hi: {}, blist: {}", self.id, self.dfsnum, self.hi, self.blist)
     }
 }
 
@@ -54,7 +54,8 @@ struct Edge {
     is_tree_edge: bool, // is this edge a tree edge?
     is_backedge: bool, // is this edge a backedge?
     is_capping: bool, // is this edge a capping backedge?
-    // pointer to bracket list cell where this edge is stored
+    // pointer to bracket list cell where this edge is stored, which in big-O would make deleting it faster
+    // but now we're using a vector implementation and iterating over it to remove entries, which has other efficiencies
     //blist_cell: Option<CursorMut<EdgeList>>,
 }
 
@@ -83,6 +84,8 @@ impl fmt::Display for Edge {
 }
 
 type EdgeList = Vec<Rc<RefCell<Edge>>>;
+
+type FlowGraph = Graph::<Rc<RefCell<Node>>, Rc<RefCell<Edge>>, Undirected>;
 
 #[derive(Clone,Debug)]
 struct BracketList {
@@ -133,7 +136,7 @@ impl BracketList {
 }
 
 // function that writes the petgraph to a dot format file
-fn write_dot(graph: &Graph<Rc<RefCell<Node>>, Rc<RefCell<Edge>>, Undirected>,
+fn write_dot(graph: &FlowGraph,
              file_name: &str,
              ftype: &str) {
     let mut output_bytes = Vec::new();
@@ -181,7 +184,7 @@ fn write_dot(graph: &Graph<Rc<RefCell<Node>>, Rc<RefCell<Edge>>, Undirected>,
             // build a label that displays all attributes compactly
             // pretty print the blist so that it fits in the node
             let mut label = String::new();
-            label.push_str(&format!("id: {}, dfsnum: {}, hi: {}\nblist: {}", n.id, n.dfsnum, n.hi, n.blist));
+            label.push_str(&format!("id: {}, dfs: {}, hi: {}\nblist: {}", n.id, n.dfsnum, n.hi, n.blist));
             //let mut blist = String::new();
             //for bracket in n.blist.brackets.iter() {
             //    blist.push_str(&format!("{} ", bracket.borrow()));
@@ -204,7 +207,7 @@ fn write_dot(graph: &Graph<Rc<RefCell<Node>>, Rc<RefCell<Edge>>, Undirected>,
         .expect("failed to execute process");
 }
 
-fn cycle_equivalence(graph: &mut Graph<Rc<RefCell<Node>>, Rc<RefCell<Edge>>, Undirected>,
+fn cycle_equivalence(graph: &mut FlowGraph,
                      rev_order: &Vec<NodeIndex>) {
     let mut curr_class = 1;
     //closure for next_class()
@@ -223,7 +226,7 @@ fn cycle_equivalence(graph: &mut Graph<Rc<RefCell<Node>>, Rc<RefCell<Edge>>, Und
     //    hichild := any child c of n having c.hi == hi_1;
     //    hi_2 := min {c.hi | c is a child of n other than hichild };
     // print the graph
-    let mut iter = 0; // put iter in the file name
+    //let mut iter = 0; // put iter in the file name
     //write_dot(graph, format!("graph_{}.ce.dot", iter).as_str(), "png");
     for ni in rev_order {
         let node = graph[*ni].clone();
@@ -391,14 +394,286 @@ fn cycle_equivalence(graph: &mut Graph<Rc<RefCell<Node>>, Rc<RefCell<Edge>>, Und
                 b.borrow_mut().class = e.borrow().class;
             }
         }
-        iter += 1;
+        //iter += 1;
         //write_dot(graph, format!("graph_{}.ce.dot", iter).as_str(), "png");
     }
 }
 
+// region structure
+#[derive(Debug)]
+struct SeSeRegion {
+    id: usize,
+    parent: Option<Rc<RefCell<SeSeRegion>>>,
+    children: Vec<Rc<RefCell<SeSeRegion>>>,
+    backedges: Vec<Rc<RefCell<Edge>>>,
+    nodes: Vec<Rc<RefCell<Node>>>,
+    class: usize,
+}
+
+impl SeSeRegion {
+    fn new(id_: usize, class_: usize) -> SeSeRegion {
+        SeSeRegion {
+            id: id_,
+            parent: None,
+            children: Vec::new(),
+            backedges: Vec::new(),
+            nodes: Vec::new(),
+            class: class_,
+        }
+    }
+}
+
+// structuretree of regions
+#[derive(Debug)]
+struct StructureTree {
+    root: Option<Rc<RefCell<SeSeRegion>>>,
+}
+
+impl StructureTree {
+    fn new() -> StructureTree {
+        StructureTree {
+            root: None,
+        }
+    }
+    // print the structure tree to dot format to the specified file
+    // and write it to an image using graphviz
+    fn print_dot(&self, _graph: &FlowGraph, filename: &str) {
+        let mut dot = String::new();
+        dot.push_str("digraph {\n");
+        dot.push_str("node [shape=record];\n");
+        //let mut iter = 0;
+        let mut stack = Vec::new();
+        if let Some(root) = &self.root {
+            stack.push(root.clone());
+        }
+        while !stack.is_empty() {
+            let node = stack.pop().unwrap();
+            let node = node.borrow();
+            // write the tree simply, using the format region_{} with the id for the graphviz node
+            // edges correspond to parent -> child relationships
+            dot.push_str(format!("region_{} [label=\"{{", node.id).as_str());
+            dot.push_str(format!("id: {}", node.id).as_str());
+            dot.push_str(format!("|class: {}", node.class).as_str());
+            //dot.push_str(format!("|entry: {}", node.entry.index()).as_str());
+            //dot.push_str(format!("|exit: {}", node.exit.index()).as_str());
+            //dot.push_str(format!("|header: {}", node.header.index()).as_str());
+            dot.push_str("}\"];\n");
+            if let Some(parent) = &node.parent {
+                let parent = parent.borrow();
+                dot.push_str(format!("region_{} -> region_{};\n", parent.id, node.id).as_str());
+            }
+            for child in node.children.iter() {
+                stack.push(child.clone());
+            }
+        }
+        dot.push_str("}\n");
+        let mut file = File::create(filename).unwrap();
+        file.write_all(dot.as_bytes()).unwrap();
+        // write the dot file to a PDF
+        let mut command = Command::new("dot");
+        command.arg("-Tpdf");
+        command.arg(filename);
+        command.arg("-o");
+        command.arg(format!("{}.pdf", filename));
+        command.output().unwrap();
+    }
+}
+
+enum GraphEntity {
+    Node(Rc<RefCell<Node>>),
+    Edge(Rc<RefCell<Edge>>),
+}
+
+use std::collections::HashSet;
+
+// write the above pseudocode as a rust function, assume we can use our annotations on the graph edges for cycle equivalence classes
+fn build_structure_tree(graph: &mut FlowGraph) -> StructureTree  {
+
+    write_dot(graph, "graph.dot", "pdf");
+    let dfs_rev_order = dfs_tree(graph);
+    write_dot(graph, "graph2.dot", "pdf");
+    cycle_equivalence(&mut *graph, &dfs_rev_order);
+    write_dot(graph, "graph3.dot", "pdf");
+
+    //let dfs_order = dfs_rev_order.iter().rev();
+
+    // remove the capping backedges from the graph
+    let mut capping_edges = Vec::new();
+    for edge_idx in graph.edge_indices() {
+        let edge = graph.edge_weight_mut(edge_idx).unwrap();
+        if edge.borrow().is_capping {
+            capping_edges.push(edge_idx);
+        }
+    }
+    for edge in capping_edges.iter() {
+        graph.remove_edge(*edge);
+    }
+
+    // Perform depth-first traversal of the control flow graph
+    // get the source node of the graph as the lowest node in the graph
+    let source = NodeIndex::new(0);
+    // run a depth first search and use DfsEvent matching to collect the edges in order of traversal
+
+    // we will then store the ordered list of both edges and nodes that we encounter
+    let mut dfs_order = Vec::<GraphEntity>::new();
+    // run a depth first search and use DfsEvent matching to mark tree edges and back edges
+    // and record when we first encounter a node in the search in dfs_order
+    depth_first_search(&*graph, Some(source), |event| {
+        match event {
+            DfsEvent::Discover(node, _) => {
+                let node = graph.node_weight(node).unwrap();
+                dfs_order.push(GraphEntity::Node(node.clone()));
+            }
+            DfsEvent::TreeEdge(from, to) => {
+                let edge = graph.edge_weight(graph.find_edge(from, to).unwrap()).unwrap();
+                dfs_order.push(GraphEntity::Edge(edge.clone()));
+            }
+            DfsEvent::BackEdge(from, to) => {
+                let edge = graph.edge_weight(graph.find_edge(from, to).unwrap()).unwrap();
+                if edge.borrow().is_backedge { // avoid multiple counting of edges as we traverse back up them
+                    dfs_order.push(GraphEntity::Edge(edge.clone()));
+                }
+            }
+            _ => {}
+        }
+    });
+
+    // Compute cycle equivalence classes for edges in O(E) time
+    //cycle_equivalence(&*graph);
+    // Initialize an empty stack to keep track of entered regions
+    let mut stack = Vec::<Rc<RefCell<SeSeRegion>>>::new();
+    // Initialize the root of the program structure tree
+    let mut program_structure_tree = StructureTree::new();
+    // closure to get the next region id
+    let mut curr_id = 1;
+    let mut next_region_id = || {
+        let id = curr_id;
+        curr_id += 1;
+        id
+    };
+
+    /*
+    Since cycle equivalent edges are totally ordered in the control flow graph by dominance and postdominance, each adjacent pair of edges in this order encloses a canonical SESE region.
+    To find canonical regions, we first compute cycle equivalence classes for edges in O(E) time using the algorithm in Figure 4.
+    Any depth-first traversal of the original control flow graph will visit edges in a given cycle equivalence class in order; during this traversal, entry and exit edges of canonical SESE regions are identified.
+    Canonical regions can be organized into a program structure tree such that a region’s parent is the closest containing region and its children are all the regions immediately contained within the region.
+    We discover the nesting relationship during the same depth-first traversal that determines canonical regions.
+    The depth-first search keeps track of the most recently entered region (i.e. the current region).
+    When a region is first entered, we set its parent to the current region and then update the current region to be the region just entered.
+    When a region is exited, the current region is set to be the exited region’s parent.
+    From Theorem 1, it follows that the pushing and popping follows a stack discipline.
+    The topmost SESE region on this stack when DFS reaches the entry node of a SESE region R1 is the name of the smallest SESE region containing R1.
+    Once the depth-first traversal is complete, the program structure tree has been built.
+     */
+
+    //let mut edge = Vec::new();
+    // set to keep track of active cycle equivalency classes
+    let mut seen_classes = HashSet::<usize>::new();
+    let mut firsts = HashSet::<usize>::new();
+    let mut lasts = HashSet::<usize>::new();
+
+    for (i, entity) in dfs_order.iter().enumerate() {
+        if let GraphEntity::Edge(edge) = entity {
+            let edge = edge.borrow();
+            if !seen_classes.contains(&edge.class) {
+                seen_classes.insert(edge.class);
+                firsts.insert(i);
+            }
+        }
+    }
+
+    seen_classes.clear();
+    // in reverse order
+    for (i, entity) in dfs_order.iter().rev().enumerate() {
+        if let GraphEntity::Edge(edge) = entity {
+            let edge = edge.borrow();
+            if !seen_classes.contains(&edge.class) {
+                seen_classes.insert(edge.class);
+                lasts.insert(dfs_order.len()-1-i);
+            }
+        }
+    }
+
+    print!("traversal:");
+    for (i, entity) in dfs_order.iter().enumerate() {
+        match entity {
+            GraphEntity::Node(node) => {
+                print!(" n{}", node.borrow().id);
+            }
+            GraphEntity::Edge(edge_) => {
+                let edge = edge_.borrow();
+                print!(" e{}", edge.class);
+                let is_sese_entry = !lasts.contains(&i);
+                let is_sese_exit = !firsts.contains(&i);
+                if is_sese_entry {
+                    print!("+");
+                }
+                if is_sese_exit {
+                    print!("-");
+                }
+            }
+        }
+    }
+    println!();
+
+    
+    /*
+    print!("edge_classes:");
+    for c in edge_classes.iter() {
+        print!(" {}", c);
+    }
+    println!();
+    */
+
+        /*
+        // is the edge's class in the active classes set?
+        let is_entry = if active_classes.contains(&edge.class) {
+            false
+        } else {
+            active_classes.insert(edge.class);
+            true
+        };
+        //let is_exit =
+        println!("edge: {:?}", edge);
+
+        // When a region is first entered, we set its parent to the current region and then update the current region to be the region just entered.
+        if is_entry {
+            // create a new region
+            let region = Rc::new(RefCell::new(SeSeRegion::new(next_region_id(), edge.class)));
+            // set the parent of the region to the current region
+            region.borrow_mut().parent = current_region.clone();
+            // push the region onto the stack
+            stack.push(region.clone());
+            // add the region to the program structure tree by adding it to the current region's children
+            if let Some(ref mut current_region) = current_region {
+                current_region.borrow_mut().children.push(region.clone());
+            } else {
+                // if there is no current region, then this is the root of the program structure tree
+                program_structure_tree.root = Some(region.clone());
+            }
+            // set the current region to the new region
+            current_region = Some(region.clone());
+        } else {
+            // When a region is exited, the current region is set to be the exited region’s parent.
+            // pop the topmost region off the stack
+            let popped_region = stack.pop().unwrap_or_else(|| panic!("stack underflow"));
+            // set the current region to the popped region's parent
+            current_region = popped_region.borrow().parent.clone();
+            // remove from active classes
+            active_classes.remove(&edge.class);
+        }
+    }
+        */
+
+    program_structure_tree.print_dot(&*graph, "structure_tree.dot");
+
+    // Return the built program structure tree
+    program_structure_tree
+}
+
 use petgraph::visit::depth_first_search;
 
-fn dfs_tree(graph: &mut Graph<Rc<RefCell<Node>>, Rc<RefCell<Edge>>, Undirected>) -> Vec<NodeIndex> {
+fn dfs_tree(graph: &mut FlowGraph) -> Vec<NodeIndex> {
     // get the source node of the graph as the lowest node in the graph
     let source = NodeIndex::new(0);
     let mut dfs_order = Vec::new();
@@ -451,20 +726,20 @@ fn dfs_tree(graph: &mut Graph<Rc<RefCell<Node>>, Rc<RefCell<Edge>>, Undirected>)
     dfs_order
 }
 
-fn add_graph_node(graph: &mut Graph<Rc<RefCell<Node>>, Rc<RefCell<Edge>>, Undirected>, id: usize) -> NodeIndex {
+fn add_graph_node(graph: &mut FlowGraph, id: usize) -> NodeIndex {
     let node = Rc::new(RefCell::new(Node::new(id)));
     graph.add_node(node)
 }
 
-fn add_graph_edge(graph: &mut Graph<Rc<RefCell<Node>>, Rc<RefCell<Edge>>, Undirected>, from: NodeIndex, to: NodeIndex) -> Rc<RefCell<Edge>> {
+fn add_graph_edge(graph: &mut FlowGraph, from: NodeIndex, to: NodeIndex) -> Rc<RefCell<Edge>> {
     let edge = Rc::new(RefCell::new(Edge::new(from.index(), to.index())));
     graph.add_edge(from, to, edge.clone());
     edge
 }
 
-fn make_example_0() -> Graph<Rc<RefCell<Node>>, Rc<RefCell<Edge>>, Undirected> {
+fn make_example_0() -> FlowGraph {
 
-    let mut graph = Graph::<Rc<RefCell<Node>>, Rc<RefCell<Edge>>, Undirected>::new_undirected();
+    let mut graph = FlowGraph::new_undirected();
 
     let a = add_graph_node(&mut graph, 0);
     let b = add_graph_node(&mut graph, 1);
@@ -488,8 +763,8 @@ fn make_example_0() -> Graph<Rc<RefCell<Node>>, Rc<RefCell<Edge>>, Undirected> {
 }
 
 
-fn make_example_a() -> Graph::<Rc<RefCell<Node>>, Rc<RefCell<Edge>>, Undirected> {
-    let mut graph = Graph::<Rc<RefCell<Node>>, Rc<RefCell<Edge>>, Undirected>::new_undirected();
+fn make_example_a() -> FlowGraph {
+    let mut graph = FlowGraph::new_undirected();
     let n0 = add_graph_node(&mut graph, 0);
     let n1 = add_graph_node(&mut graph, 1);
     let n2 = add_graph_node(&mut graph, 2);
@@ -518,8 +793,8 @@ fn make_example_a() -> Graph::<Rc<RefCell<Node>>, Rc<RefCell<Edge>>, Undirected>
     graph
 }
 
-fn make_example_fig1() -> Graph::<Rc<RefCell<Node>>, Rc<RefCell<Edge>>, Undirected> {
-    let mut graph = Graph::<Rc<RefCell<Node>>, Rc<RefCell<Edge>>, Undirected>::new_undirected();
+fn make_example_fig1() -> FlowGraph {
+    let mut graph = FlowGraph::new_undirected();
     let n0 = add_graph_node(&mut graph, 0);
     let n1 = add_graph_node(&mut graph, 1);
     let n2 = add_graph_node(&mut graph, 2);
@@ -574,25 +849,35 @@ fn make_example_fig1() -> Graph::<Rc<RefCell<Node>>, Rc<RefCell<Edge>>, Undirect
     graph
 }
 
+fn make_example_diamond() -> FlowGraph {
+    let mut graph = FlowGraph::new_undirected();
+    let n0 = add_graph_node(&mut graph, 0);
+    let n1 = add_graph_node(&mut graph, 1);
+    let n2 = add_graph_node(&mut graph, 2);
+    let n3 = add_graph_node(&mut graph, 3);
+    let n4 = add_graph_node(&mut graph, 4);
+    let n5 = add_graph_node(&mut graph, 5);
+    // 0 -> 1
+    add_graph_edge(&mut graph, n0, n1);
+    // 1 -> 2 and 3
+    add_graph_edge(&mut graph, n1, n2);
+    add_graph_edge(&mut graph, n1, n3);
+    // 2 -> 4
+    add_graph_edge(&mut graph, n2, n4);
+    // 3 -> 4
+    add_graph_edge(&mut graph, n3, n4);
+    // 4 -> 5
+    add_graph_edge(&mut graph, n4, n5);
+    // 5 -> 0
+    add_graph_edge(&mut graph, n5, n0);
+    graph
+}
+
 fn main() {
 
-    //let mut graph = make_example_a();
-    let mut graph = make_example_fig1();
-    
-    // write the graph to dot format to file
-    //let mut f = File::create("graph.dot").unwrap();
-    // use the dot_writer crate to write the graph to file
-    // using square nodes and the default style
-    write_dot(&graph, "graph.dot", "pdf");
-    
-    //write!(f, "{:?}", Dot::with_config(&graph, &[Config::NodeShape(Shape::Square)])).unwrap();
-    // call graphviz dot to render the file to graph.pdf
-    //Command::new("dot").args(["-Tpdf", "graph.dot", "-o", "graph.pdf"]).status().unwrap();
-    let dfs_rev_order = dfs_tree(&mut graph);
-    write_dot(&graph, "graph2.dot", "pdf");
-
-    cycle_equivalence(&mut graph, &dfs_rev_order);
-    write_dot(&graph, "graph3.dot", "pdf");
-    
+    let mut graph = make_example_a();
+    //let mut graph = make_example_fig1();
+    //let mut graph = make_example_diamond();
+    let _tree = build_structure_tree(&mut graph);
 
 }
