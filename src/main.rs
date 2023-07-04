@@ -405,7 +405,7 @@ struct SeSeRegion {
     id: usize,
     parent: Option<Rc<RefCell<SeSeRegion>>>,
     children: Vec<Rc<RefCell<SeSeRegion>>>,
-    backedges: Vec<Rc<RefCell<Edge>>>,
+//    backedges: Vec<Rc<RefCell<Edge>>>,
     nodes: Vec<Rc<RefCell<Node>>>,
     class: usize,
 }
@@ -416,7 +416,7 @@ impl SeSeRegion {
             id: id_,
             parent: None,
             children: Vec::new(),
-            backedges: Vec::new(),
+//            backedges: Vec::new(),
             nodes: Vec::new(),
             class: class_,
         }
@@ -454,9 +454,10 @@ impl StructureTree {
             dot.push_str(format!("region_{} [label=\"{{", node.id).as_str());
             dot.push_str(format!("id: {}", node.id).as_str());
             dot.push_str(format!("|class: {}", node.class).as_str());
-            //dot.push_str(format!("|entry: {}", node.entry.index()).as_str());
-            //dot.push_str(format!("|exit: {}", node.exit.index()).as_str());
-            //dot.push_str(format!("|header: {}", node.header.index()).as_str());
+            dot.push_str("|nodes:");
+            for n in node.nodes.iter() {
+                dot.push_str(format!(" {}", n.borrow().id).as_str());
+            }
             dot.push_str("}\"];\n");
             if let Some(parent) = &node.parent {
                 let parent = parent.borrow();
@@ -481,7 +482,7 @@ impl StructureTree {
 
 enum GraphEntity {
     Node(Rc<RefCell<Node>>),
-    Edge(Rc<RefCell<Edge>>),
+    Edge(Rc<RefCell<Edge>>, (NodeIndex, NodeIndex)),
 }
 
 use std::collections::HashSet;
@@ -514,6 +515,8 @@ fn build_structure_tree(graph: &mut FlowGraph) -> StructureTree  {
     let source = NodeIndex::new(0);
     // run a depth first search and use DfsEvent matching to collect the edges in order of traversal
 
+    let mut root_edge = None;
+
     // we will then store the ordered list of both edges and nodes that we encounter
     let mut dfs_order = Vec::<GraphEntity>::new();
     // run a depth first search and use DfsEvent matching to mark tree edges and back edges
@@ -526,12 +529,15 @@ fn build_structure_tree(graph: &mut FlowGraph) -> StructureTree  {
             }
             DfsEvent::TreeEdge(from, to) => {
                 let edge = graph.edge_weight(graph.find_edge(from, to).unwrap()).unwrap();
-                dfs_order.push(GraphEntity::Edge(edge.clone()));
+                dfs_order.push(GraphEntity::Edge(edge.clone(), (from, to)));
+                if root_edge.is_none() {
+                    root_edge = Some((from, to));
+                }
             }
             DfsEvent::BackEdge(from, to) => {
                 let edge = graph.edge_weight(graph.find_edge(from, to).unwrap()).unwrap();
                 if edge.borrow().is_backedge { // avoid multiple counting of edges as we traverse back up them
-                    dfs_order.push(GraphEntity::Edge(edge.clone()));
+                    dfs_order.push(GraphEntity::Edge(edge.clone(), (from, to)));
                 }
             }
             _ => {}
@@ -566,14 +572,12 @@ fn build_structure_tree(graph: &mut FlowGraph) -> StructureTree  {
     Once the depth-first traversal is complete, the program structure tree has been built.
      */
 
-    //let mut edge = Vec::new();
-    // set to keep track of active cycle equivalency classes
     let mut seen_classes = HashSet::<usize>::new();
     let mut firsts = HashSet::<usize>::new();
     let mut lasts = HashSet::<usize>::new();
 
     for (i, entity) in dfs_order.iter().enumerate() {
-        if let GraphEntity::Edge(edge) = entity {
+        if let GraphEntity::Edge(edge, _) = entity {
             let edge = edge.borrow();
             if !seen_classes.contains(&edge.class) {
                 seen_classes.insert(edge.class);
@@ -585,7 +589,7 @@ fn build_structure_tree(graph: &mut FlowGraph) -> StructureTree  {
     seen_classes.clear();
     // in reverse order
     for (i, entity) in dfs_order.iter().rev().enumerate() {
-        if let GraphEntity::Edge(edge) = entity {
+        if let GraphEntity::Edge(edge, _) = entity {
             let edge = edge.borrow();
             if !seen_classes.contains(&edge.class) {
                 seen_classes.insert(edge.class);
@@ -600,8 +604,8 @@ fn build_structure_tree(graph: &mut FlowGraph) -> StructureTree  {
             GraphEntity::Node(node) => {
                 print!(" n{}", node.borrow().id);
             }
-            GraphEntity::Edge(edge_) => {
-                let edge = edge_.borrow();
+            GraphEntity::Edge(edge, _) => {
+                let edge = edge.borrow();
                 print!(" e{}", edge.class);
                 let is_sese_entry = !lasts.contains(&i);
                 let is_sese_exit = !firsts.contains(&i);
@@ -615,6 +619,43 @@ fn build_structure_tree(graph: &mut FlowGraph) -> StructureTree  {
         }
     }
     println!();
+    
+    let base_region = Rc::new(RefCell::new(SeSeRegion::new(next_region_id(), 0)));
+    program_structure_tree.root = Some(base_region.clone());
+    let mut current_region = base_region.clone();
+
+    for (i, entity) in dfs_order.iter().enumerate() {
+        match entity {
+            GraphEntity::Node(node) => {
+                // add to current region
+                current_region.borrow_mut().nodes.push(node.clone());
+            }
+            GraphEntity::Edge(edge_, _) => {
+                let edge = edge_.borrow();
+                let is_sese_entry = !lasts.contains(&i);
+                let is_sese_exit = !firsts.contains(&i);
+                if is_sese_exit {
+                    // When a region is exited, the current region is set to be the exited region’s parent.
+                    // pop the topmost region off the stack
+                    let popped_region = stack.pop().unwrap_or_else(|| panic!("stack underflow"));
+                    // set the current region to the popped region's parent
+                    current_region = popped_region.borrow().parent.as_ref().unwrap().clone();
+                }
+                if is_sese_entry {
+                    // create a new region
+                    let region = Rc::new(RefCell::new(SeSeRegion::new(next_region_id(), edge.class)));
+                    // set the parent of the region to the current region
+                    region.borrow_mut().parent = Some(current_region.clone());
+                    // push the region onto the stack
+                    stack.push(region.clone());
+                    // add the region to the program structure tree by adding it to the current region's children
+                    current_region.borrow_mut().children.push(region.clone());
+                    // set the current region to the new region
+                    current_region = region.clone();
+                }
+            }
+        }
+    }
 
     
     /*
@@ -638,29 +679,7 @@ fn build_structure_tree(graph: &mut FlowGraph) -> StructureTree  {
 
         // When a region is first entered, we set its parent to the current region and then update the current region to be the region just entered.
         if is_entry {
-            // create a new region
-            let region = Rc::new(RefCell::new(SeSeRegion::new(next_region_id(), edge.class)));
-            // set the parent of the region to the current region
-            region.borrow_mut().parent = current_region.clone();
-            // push the region onto the stack
-            stack.push(region.clone());
-            // add the region to the program structure tree by adding it to the current region's children
-            if let Some(ref mut current_region) = current_region {
-                current_region.borrow_mut().children.push(region.clone());
-            } else {
-                // if there is no current region, then this is the root of the program structure tree
-                program_structure_tree.root = Some(region.clone());
-            }
-            // set the current region to the new region
-            current_region = Some(region.clone());
         } else {
-            // When a region is exited, the current region is set to be the exited region’s parent.
-            // pop the topmost region off the stack
-            let popped_region = stack.pop().unwrap_or_else(|| panic!("stack underflow"));
-            // set the current region to the popped region's parent
-            current_region = popped_region.borrow().parent.clone();
-            // remove from active classes
-            active_classes.remove(&edge.class);
         }
     }
         */
@@ -670,6 +689,10 @@ fn build_structure_tree(graph: &mut FlowGraph) -> StructureTree  {
     // Return the built program structure tree
     program_structure_tree
 }
+
+// import hashmap
+use std::collections::HashMap;
+//use petgraph::visit::Dfs;
 
 use petgraph::visit::depth_first_search;
 
