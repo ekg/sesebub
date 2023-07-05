@@ -423,6 +423,15 @@ impl SeSeRegion {
     }
 }
 
+/*
+impl fmt::Display for SeSeRegion {
+    // fmt display for SeSeRegion
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "SeSeRegion {{ id: {}, parent: {:?}, children: {:?}, nodes: {:?}, class: {} }}", self.id, self.parent, self.children, self.nodes, self.class)
+    }
+}
+*/
+
 // structuretree of regions
 #[derive(Debug)]
 struct StructureTree {
@@ -443,8 +452,10 @@ impl StructureTree {
         dot.push_str("node [shape=record];\n");
         //let mut iter = 0;
         let mut stack = Vec::new();
+        let mut seen = HashSet::new();
         if let Some(root) = &self.root {
             stack.push(root.clone());
+            seen.insert(root.borrow().id);
         }
         while !stack.is_empty() {
             let node = stack.pop().unwrap();
@@ -464,7 +475,9 @@ impl StructureTree {
                 dot.push_str(format!("region_{} -> region_{};\n", parent.id, node.id).as_str());
             }
             for child in node.children.iter() {
-                stack.push(child.clone());
+                if !seen.contains(&child.borrow().id) {
+                    stack.push(child.clone());
+                }
             }
         }
         dot.push_str("}\n");
@@ -481,7 +494,7 @@ impl StructureTree {
 }
 
 enum GraphEntity {
-    Node(Rc<RefCell<Node>>),
+    Node(Rc<RefCell<Node>>, NodeIndex),
     Edge(Rc<RefCell<Edge>>, (NodeIndex, NodeIndex)),
 }
 
@@ -523,9 +536,9 @@ fn build_structure_tree(graph: &mut FlowGraph) -> StructureTree  {
     // and record when we first encounter a node in the search in dfs_order
     depth_first_search(&*graph, Some(source), |event| {
         match event {
-            DfsEvent::Discover(node, _) => {
-                let node = graph.node_weight(node).unwrap();
-                dfs_order.push(GraphEntity::Node(node.clone()));
+            DfsEvent::Discover(node_, _) => {
+                let node = graph.node_weight(node_).unwrap();
+                dfs_order.push(GraphEntity::Node(node.clone(), node_));
             }
             DfsEvent::TreeEdge(from, to) => {
                 let edge = graph.edge_weight(graph.find_edge(from, to).unwrap()).unwrap();
@@ -551,7 +564,7 @@ fn build_structure_tree(graph: &mut FlowGraph) -> StructureTree  {
     // Initialize the root of the program structure tree
     let mut program_structure_tree = StructureTree::new();
     // closure to get the next region id
-    let mut curr_id = 1;
+    let mut curr_id = 0;
     let mut next_region_id = || {
         let id = curr_id;
         curr_id += 1;
@@ -601,7 +614,7 @@ fn build_structure_tree(graph: &mut FlowGraph) -> StructureTree  {
     print!("traversal:");
     for (i, entity) in dfs_order.iter().enumerate() {
         match entity {
-            GraphEntity::Node(node) => {
+            GraphEntity::Node(node, _) => {
                 print!(" n{}", node.borrow().id);
             }
             GraphEntity::Edge(edge, _) => {
@@ -619,19 +632,30 @@ fn build_structure_tree(graph: &mut FlowGraph) -> StructureTree  {
         }
     }
     println!();
-    
+
+    // query regions by id
+    let mut regions = HashMap::<usize, Rc<RefCell<SeSeRegion>>>::new();
+    // map from node id to region
+    let mut region_map = HashMap::<NodeIndex, Rc<RefCell<SeSeRegion>>>::new();
     let base_region = Rc::new(RefCell::new(SeSeRegion::new(next_region_id(), 0)));
     program_structure_tree.root = Some(base_region.clone());
     let mut current_region = base_region.clone();
+    regions.insert(0, current_region.clone());
 
     for (i, entity) in dfs_order.iter().enumerate() {
         match entity {
-            GraphEntity::Node(node) => {
+            GraphEntity::Node(node, idx) => {
                 // add to current region
                 current_region.borrow_mut().nodes.push(node.clone());
+                // and add the node to region map
+                region_map.insert(*idx, current_region.clone());
             }
-            GraphEntity::Edge(edge_, _) => {
+            GraphEntity::Edge(edge_, (from, to)) => {
                 let edge = edge_.borrow();
+                if !edge.is_tree_edge {
+                    // backedges are not part of any region
+                    continue;
+                }
                 let is_sese_entry = !lasts.contains(&i);
                 let is_sese_exit = !firsts.contains(&i);
                 if is_sese_exit {
@@ -644,7 +668,11 @@ fn build_structure_tree(graph: &mut FlowGraph) -> StructureTree  {
                 if is_sese_entry {
                     // create a new region
                     let region = Rc::new(RefCell::new(SeSeRegion::new(next_region_id(), edge.class)));
-                    // set the parent of the region to the current region
+                    // save the region in our regions map
+                    println!("adding region {}", region.borrow().id);
+                    regions.insert(region.borrow().id, region.clone());
+                    // we will have to fix this up later for the full structure tree
+                    // it actually is relative to our DFS order, but we want tree-relative parentage
                     region.borrow_mut().parent = Some(current_region.clone());
                     // push the region onto the stack
                     stack.push(region.clone());
@@ -656,6 +684,85 @@ fn build_structure_tree(graph: &mut FlowGraph) -> StructureTree  {
             }
         }
     }
+
+    /*
+    {
+        let mut curr_id = 0;
+        let mut next_region_id = || {
+            let id = curr_id;
+            curr_id += 1;
+            id
+        };
+        for (i, entity) in dfs_order.iter().enumerate() {
+            if let GraphEntity::Edge(_, (from, to)) = entity {
+                let is_sese_entry = !lasts.contains(&i);
+                println!("e{}: {} -> {} {}", i, from.index(), to.index(), if is_sese_entry { "+" } else { "" });
+                if is_sese_entry {
+                    // get the region from our regions map
+                    let id = next_region_id();
+                    if id == 0 {
+                        continue;
+                    }
+                    println!("region {}:", id);
+                    let region = regions.get(&id).unwrap_or_else(|| panic!("region not found"));
+                    // set the parent of the region to the current region
+                    // this is not strictly correct... we should point to the region that contains nodes at our borders
+                    // by definition of our DFS, this should have been generated already, so we can look it up
+                    // check if the from and/or to node is in the region map
+                    println!("region nodes:");
+                    for node in region.borrow().nodes.iter() {
+                        println!("  n{}", node.borrow().id);
+                    }
+
+                    // get reference to the node weight for our from
+                    let from_node = graph.node_weight(*from).unwrap_or_else(|| panic!("node not found"));
+                    let to_node = graph.node_weight(*to).unwrap_or_else(|| panic!("node not found"));
+                    println!("before from node: n{}", from_node.borrow().id);
+                    println!("before to node: n{}", to_node.borrow().id);
+
+                    // set from node to the one with the lower dfsnum
+                    let (from_node, to_node) = if from_node.borrow().dfsnum < to_node.borrow().dfsnum {
+                        (from_node, to_node)
+                    } else {
+                        (to_node, from_node)
+                    };
+
+                    println!("edge ({}, {}) is sese entry", from.index(), to.index());
+                    // from and to print
+                    println!("from: {}", from_node.borrow().id);
+                    println!("to: {}", to_node.borrow().id);
+
+
+                    let from_region = region_map.get(from).unwrap_or_else(|| panic!("region not found"));
+                    let to_region = region_map.get(to).unwrap_or_else(|| panic!("region not found"));
+
+                    // copy the classes
+                    let from_class = from_region.borrow().class;
+                    let to_class = to_region.borrow().class;
+                    println!("from region: {}", from_region.borrow().id);
+                    println!("to region: {}", to_region.borrow().id);
+
+                    // if our class is the same, we should be siblings with the last region, so we should have the same parent
+                    println!("from class: {}", from_class);
+                    println!("to class: {}", to_class);
+                    if from_class == to_class {
+                        // set the parent of the region to the parent of the other region
+                        println!("sibling, setting same parent");
+                        let x = from_region.borrow().parent.clone();
+                        region.borrow_mut().parent = x;
+                    } else {
+                        println!("setting parent class: {}", from_class);
+                        // set the parent of the region to the from region
+                        region.borrow_mut().parent = Some(from_region.clone());
+                    }
+                    
+                }
+            }
+        }
+    }*/
+
+
+
 
     
     /*
