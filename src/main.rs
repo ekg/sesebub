@@ -511,17 +511,26 @@ fn build_structure_tree(graph: &mut FlowGraph) -> StructureTree  {
 
     //let dfs_order = dfs_rev_order.iter().rev();
 
-    // remove the capping backedges from the graph
-    let mut capping_edges = Vec::new();
-    for edge_idx in graph.edge_indices() {
-        let edge = graph.edge_weight_mut(edge_idx).unwrap();
-        if edge.borrow().is_capping {
-            capping_edges.push(edge_idx);
+    // copy the graph, skipping capping backedges
+    // empty graph
+    let mut graph_copy = FlowGraph::new_undirected();
+    // copy each node in the graph
+    for node in graph.node_indices() {
+        graph_copy.add_node(graph[node].clone());
+    }
+
+    for edge in graph.edge_references() {
+        let e = edge.weight().borrow();
+        if !e.is_capping {
+            graph_copy.add_edge(NodeIndex::new(e.from), NodeIndex::new(e.to), edge.weight().clone());
         }
     }
-    for edge in capping_edges.iter() {
-        graph.remove_edge(*edge);
-    }
+
+    // overwrite the graph with the copy that has no capping edges
+    let graph = &mut graph_copy;
+
+    // write the graph to dot so we can see what we removed
+    write_dot(graph, "graph4.dot", "pdf");
 
     // Perform depth-first traversal of the control flow graph
     // get the source node of the graph as the lowest node in the graph
@@ -902,6 +911,8 @@ fn make_example_fig1() -> FlowGraph {
     add_graph_edge(&mut graph, n13, n15);
     // 14 -> 15
     add_graph_edge(&mut graph, n14, n15);
+    // cycle edge from 15 to 0
+    add_graph_edge(&mut graph, n15, n0);
     graph
 }
 
@@ -931,8 +942,8 @@ fn make_example_diamond() -> FlowGraph {
 
 fn main() {
 
-    let mut graph = make_example_a();
-    //let mut graph = make_example_fig1();
+    //let mut graph = make_example_a();
+    let mut graph = make_example_fig1();
     //let mut graph = make_example_diamond();
     let _tree = build_structure_tree(&mut graph);
 
