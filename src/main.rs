@@ -652,10 +652,6 @@ fn build_structure_tree(graph: &mut FlowGraph) -> StructureTree  {
             }
             GraphEntity::Edge(edge_, (from, to)) => {
                 let edge = edge_.borrow();
-                if !edge.is_tree_edge {
-                    // backedges are not part of any region
-                    continue;
-                }
                 let is_sese_entry = !lasts.contains(&i);
                 let is_sese_exit = !firsts.contains(&i);
                 if is_sese_exit {
@@ -669,15 +665,50 @@ fn build_structure_tree(graph: &mut FlowGraph) -> StructureTree  {
                     // create a new region
                     let region = Rc::new(RefCell::new(SeSeRegion::new(next_region_id(), edge.class)));
                     // save the region in our regions map
-                    println!("adding region {}", region.borrow().id);
+                    //println!("adding region {}", region.borrow().id);
                     regions.insert(region.borrow().id, region.clone());
-                    // we will have to fix this up later for the full structure tree
-                    // it actually is relative to our DFS order, but we want tree-relative parentage
-                    region.borrow_mut().parent = Some(current_region.clone());
+                    // check the ends of the current edge
+                    // to see if either node has been included in a sese region already
+                    // we'll need to guard against an invalid lookup, as we may not have both nodes in the map
+                    let from_region = region_map.get(from);
+                    let to_region = region_map.get(to);
+                    if let Some(from_region) = from_region {
+                        // if the class of the region is not the same as our edge.class
+                        // then we need to add the region as a child of the current region
+                        if edge.class != from_region.borrow().class {
+                            // if the from node is in a region, add the new region as a child of that region
+                            from_region.borrow_mut().children.push(region.clone());
+                            // and set the new region's parent to the from region
+                            region.borrow_mut().parent = Some(from_region.clone());
+                        } else {
+                            // we nest in the parent of the from_region
+                            let parent = from_region.borrow().parent.as_ref().unwrap().clone();
+                            //let parent_region = from_region.borrow().parent.as_ref().unwrap();
+                            parent.borrow_mut().children.push(region.clone());
+                            region.borrow_mut().parent = Some(parent.clone());
+                        }
+                    } else if let Some(to_region) = to_region {
+                        if edge.class != to_region.borrow().class {
+                            // if the from node is in a region, add the new region as a child of that region
+                            to_region.borrow_mut().children.push(region.clone());
+                            // and set the new region's parent to the from region
+                            region.borrow_mut().parent = Some(to_region.clone());
+                        } else {
+                            // we nest in the parent of the from_region
+                            let parent = to_region.borrow().parent.as_ref().unwrap().clone();
+                            //let parent_region = from_region.borrow().parent.as_ref().unwrap();
+                            parent.borrow_mut().children.push(region.clone());
+                            region.borrow_mut().parent = Some(parent.clone());
+                        }
+                    } else {
+                        // otherwise, set the new region's parent to the current region
+                        current_region.borrow_mut().children.push(region.clone());
+                        // add the region to the program structure tree by adding it to the current region's children
+                        region.borrow_mut().parent = Some(current_region.clone());
+                    }
+
                     // push the region onto the stack
                     stack.push(region.clone());
-                    // add the region to the program structure tree by adding it to the current region's children
-                    current_region.borrow_mut().children.push(region.clone());
                     // set the current region to the new region
                     current_region = region.clone();
                 }
@@ -685,112 +716,7 @@ fn build_structure_tree(graph: &mut FlowGraph) -> StructureTree  {
         }
     }
 
-    /*
-    {
-        let mut curr_id = 0;
-        let mut next_region_id = || {
-            let id = curr_id;
-            curr_id += 1;
-            id
-        };
-        for (i, entity) in dfs_order.iter().enumerate() {
-            if let GraphEntity::Edge(_, (from, to)) = entity {
-                let is_sese_entry = !lasts.contains(&i);
-                println!("e{}: {} -> {} {}", i, from.index(), to.index(), if is_sese_entry { "+" } else { "" });
-                if is_sese_entry {
-                    // get the region from our regions map
-                    let id = next_region_id();
-                    if id == 0 {
-                        continue;
-                    }
-                    println!("region {}:", id);
-                    let region = regions.get(&id).unwrap_or_else(|| panic!("region not found"));
-                    // set the parent of the region to the current region
-                    // this is not strictly correct... we should point to the region that contains nodes at our borders
-                    // by definition of our DFS, this should have been generated already, so we can look it up
-                    // check if the from and/or to node is in the region map
-                    println!("region nodes:");
-                    for node in region.borrow().nodes.iter() {
-                        println!("  n{}", node.borrow().id);
-                    }
-
-                    // get reference to the node weight for our from
-                    let from_node = graph.node_weight(*from).unwrap_or_else(|| panic!("node not found"));
-                    let to_node = graph.node_weight(*to).unwrap_or_else(|| panic!("node not found"));
-                    println!("before from node: n{}", from_node.borrow().id);
-                    println!("before to node: n{}", to_node.borrow().id);
-
-                    // set from node to the one with the lower dfsnum
-                    let (from_node, to_node) = if from_node.borrow().dfsnum < to_node.borrow().dfsnum {
-                        (from_node, to_node)
-                    } else {
-                        (to_node, from_node)
-                    };
-
-                    println!("edge ({}, {}) is sese entry", from.index(), to.index());
-                    // from and to print
-                    println!("from: {}", from_node.borrow().id);
-                    println!("to: {}", to_node.borrow().id);
-
-
-                    let from_region = region_map.get(from).unwrap_or_else(|| panic!("region not found"));
-                    let to_region = region_map.get(to).unwrap_or_else(|| panic!("region not found"));
-
-                    // copy the classes
-                    let from_class = from_region.borrow().class;
-                    let to_class = to_region.borrow().class;
-                    println!("from region: {}", from_region.borrow().id);
-                    println!("to region: {}", to_region.borrow().id);
-
-                    // if our class is the same, we should be siblings with the last region, so we should have the same parent
-                    println!("from class: {}", from_class);
-                    println!("to class: {}", to_class);
-                    if from_class == to_class {
-                        // set the parent of the region to the parent of the other region
-                        println!("sibling, setting same parent");
-                        let x = from_region.borrow().parent.clone();
-                        region.borrow_mut().parent = x;
-                    } else {
-                        println!("setting parent class: {}", from_class);
-                        // set the parent of the region to the from region
-                        region.borrow_mut().parent = Some(from_region.clone());
-                    }
-                    
-                }
-            }
-        }
-    }*/
-
-
-
-
-    
-    /*
-    print!("edge_classes:");
-    for c in edge_classes.iter() {
-        print!(" {}", c);
-    }
-    println!();
-    */
-
-        /*
-        // is the edge's class in the active classes set?
-        let is_entry = if active_classes.contains(&edge.class) {
-            false
-        } else {
-            active_classes.insert(edge.class);
-            true
-        };
-        //let is_exit =
-        println!("edge: {:?}", edge);
-
-        // When a region is first entered, we set its parent to the current region and then update the current region to be the region just entered.
-        if is_entry {
-        } else {
-        }
-    }
-        */
-
+    // print the program structure tree
     program_structure_tree.print_dot(&*graph, "structure_tree.dot");
 
     // Return the built program structure tree
