@@ -612,10 +612,26 @@ fn build_structure_tree(graph: &mut FlowGraph) -> StructureTree  {
     let mut firsts = HashSet::<usize>::new();
     let mut lasts = HashSet::<usize>::new();
 
+    // find the singleton edge classes with only a single edge in the class
+    /*
+    let mut counts = HashMap::<usize, usize>::new();
+    for (_i, entity) in dfs_order.iter().rev().enumerate() {
+        if let GraphEntity::Edge(edge, _) = entity {
+            let edge = edge.borrow();
+            // increment the counter variable for the edge.class
+            let count = counts.entry(edge.class).or_insert(0);
+            *count += 1;
+        }
+    }
+    //println!("class counts: {:?}", counts);
+    */
+
     for (i, entity) in dfs_order.iter().enumerate() {
         if let GraphEntity::Edge(edge, _) = entity {
             let edge = edge.borrow();
+            println!("firsts, edge class {}", edge.class);
             if !seen_classes.contains(&edge.class) {
+                println!("not seen!");
                 seen_classes.insert(edge.class);
                 firsts.insert(i);
             }
@@ -627,13 +643,15 @@ fn build_structure_tree(graph: &mut FlowGraph) -> StructureTree  {
     for (i, entity) in dfs_order.iter().rev().enumerate() {
         if let GraphEntity::Edge(edge, _) = entity {
             let edge = edge.borrow();
+            println!("lasts, edge class {}", edge.class);
             if !seen_classes.contains(&edge.class) {
+                println!("not seen!");
                 seen_classes.insert(edge.class);
                 lasts.insert(dfs_order.len()-1-i);
             }
         }
     }
-
+    
     print!("traversal:");
     for (i, entity) in dfs_order.iter().enumerate() {
         match entity {
@@ -643,6 +661,7 @@ fn build_structure_tree(graph: &mut FlowGraph) -> StructureTree  {
             GraphEntity::Edge(edge, _) => {
                 let edge = edge.borrow();
                 print!(" e{}", edge.class);
+                let entry_exit = lasts.contains(&i) && firsts.contains(&i);
                 let is_sese_entry = !lasts.contains(&i);
                 let is_sese_exit = !firsts.contains(&i);
                 if is_sese_entry {
@@ -664,27 +683,42 @@ fn build_structure_tree(graph: &mut FlowGraph) -> StructureTree  {
     program_structure_tree.root = Some(base_region.clone());
     let mut current_region = base_region.clone();
     regions.insert(0, current_region.clone());
+    println!("set base region to {}", current_region.borrow().id);
+    let mut last_is_entry_exit = false;
 
     for (i, entity) in dfs_order.iter().enumerate() {
         match entity {
             GraphEntity::Node(node, idx) => {
-                // add to current region
+                // check that the current region matches our neighborhood
                 current_region.borrow_mut().nodes.push(node.clone());
                 // and add the node to region map
                 region_map.insert(*idx, current_region.clone());
+                println!("node {} in region {}", node.borrow().id, current_region.borrow().id);
+                if last_is_entry_exit {
+                    let _popped_region = stack.pop().unwrap_or_else(|| panic!("stack underflow"));
+                    last_is_entry_exit = false;
+                }
             }
             GraphEntity::Edge(edge_, (from, to)) => {
                 let edge = edge_.borrow();
+                let entry_exit = lasts.contains(&i) && firsts.contains(&i);
                 let is_sese_entry = !lasts.contains(&i);
                 let is_sese_exit = !firsts.contains(&i);
+                println!("{} in region {} ({}{})", edge, current_region.borrow().id, if is_sese_entry { "+" } else { "" }, if is_sese_exit { "-" } else { "" });
+                // if this is a sese entry/exit, set our current region to something sane
                 if is_sese_exit {
+                    println!("exiting region {}", edge.class);
+                    // write the stack
+                    println!("stack size: {}", stack.len());
                     // When a region is exited, the current region is set to be the exited region’s parent.
                     // pop the topmost region off the stack
                     let popped_region = stack.pop().unwrap_or_else(|| panic!("stack underflow"));
                     // set the current region to the popped region's parent
                     current_region = popped_region.borrow().parent.as_ref().unwrap().clone();
+                    println!("current region is now {}", current_region.borrow().id);
                 }
-                if is_sese_entry {
+                if is_sese_entry { //|| entry_exit {
+                    println!("entering region {}", edge.class);
                     // create a new region
                     let region = Rc::new(RefCell::new(SeSeRegion::new(next_region_id(), edge.class)));
                     // save the region in our regions map
@@ -695,7 +729,10 @@ fn build_structure_tree(graph: &mut FlowGraph) -> StructureTree  {
                     // we'll need to guard against an invalid lookup, as we may not have both nodes in the map
                     let from_region = region_map.get(from);
                     let to_region = region_map.get(to);
+                    println!("from region: {}", from.index());
+                    println!("to region: {}", to.index());
                     if let Some(from_region) = from_region {
+                        println!("linking with from region: {}", from_region.borrow().id);
                         // if the class of the region is not the same as our edge.class
                         // then we need to add the region as a child of the current region
                         if edge.class != from_region.borrow().class {
@@ -711,6 +748,7 @@ fn build_structure_tree(graph: &mut FlowGraph) -> StructureTree  {
                             region.borrow_mut().parent = Some(parent.clone());
                         }
                     } else if let Some(to_region) = to_region {
+                        println!("linking with to region: {}", to_region.borrow().id);
                         if edge.class != to_region.borrow().class {
                             // if the from node is in a region, add the new region as a child of that region
                             to_region.borrow_mut().children.push(region.clone());
@@ -724,6 +762,7 @@ fn build_structure_tree(graph: &mut FlowGraph) -> StructureTree  {
                             region.borrow_mut().parent = Some(parent.clone());
                         }
                     } else {
+                        println!("linking: no region found in either node");
                         // otherwise, set the new region's parent to the current region
                         current_region.borrow_mut().children.push(region.clone());
                         // add the region to the program structure tree by adding it to the current region's children
@@ -734,6 +773,16 @@ fn build_structure_tree(graph: &mut FlowGraph) -> StructureTree  {
                     stack.push(region.clone());
                     // set the current region to the new region
                     current_region = region.clone();
+                    println!("current region is {}", current_region.borrow().id);
+                }
+                if entry_exit {
+                    // take the current region as the current region of the parent node
+                    current_region = region_map.get(from).unwrap().clone();
+                    stack.push(current_region.clone());
+                    println!("entry/exit");
+                    // set a flag to indicate that we're at the entry/exit edge
+                    // and we should pop the stack on the next node
+                    last_is_entry_exit = true;
                 }
             }
         }
@@ -1094,8 +1143,8 @@ fn make_example_c() -> FlowGraph {
 fn main() {
     //let mut graph = make_example_a();
     //let mut graph = make_example_c();
-    //let mut graph = make_example_fig1();
-    let mut graph = make_example_fig1_a();
+    let mut graph = make_example_fig1();
+    //let mut graph = make_example_fig1_a();
     //let mut graph = make_example_diamond();
     let _tree = build_structure_tree(&mut graph);
 
