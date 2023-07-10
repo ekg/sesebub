@@ -8,6 +8,7 @@ use dot_writer::{Color, DotWriter, Attributes, Shape, Style};
 
 use std::fs::File;
 use std::io::Write;
+use std::panic::RefUnwindSafe;
 use std::process::Command;
 use std::fmt;
 
@@ -139,6 +140,7 @@ impl BracketList {
 fn write_dot(graph: &FlowGraph,
              file_name: &str,
              ftype: &str) {
+    println!("write_dot: {}", file_name);
     let mut output_bytes = Vec::new();
     {
         let mut writer = DotWriter::from(&mut output_bytes);
@@ -216,6 +218,15 @@ fn cycle_equivalence(graph: &mut FlowGraph,
         curr_class += 1;
         result
     };
+
+    // hack... collect all nodes in a vector by dfsnum
+    let order = rev_order.clone().into_iter().rev().collect::<Vec<NodeIndex>>();
+
+    let maybe_write_dot = |graph: &FlowGraph, name: &str, ftype: &str| {
+        if false {
+            write_dot(graph, name, ftype);
+        }
+    };
     
     // perform an undirected depth-fist search on G
     // for each node n in reverse depth-first order do
@@ -228,7 +239,7 @@ fn cycle_equivalence(graph: &mut FlowGraph,
     // print the graph
     //let mut iter = 0; // put iter in the file name
     //write_dot(graph, format!("graph_{}.ce.dot", iter).as_str(), "png");
-    for ni in rev_order {
+    for (iter, ni) in rev_order.iter().enumerate() {
         let node = graph[*ni].clone();
         let nid = node.borrow().id;
         let ndfsnum = node.borrow().dfsnum;
@@ -236,6 +247,7 @@ fn cycle_equivalence(graph: &mut FlowGraph,
         // undirected edges
         let mut edges = Vec::new(); // all edges
         let mut children = Vec::new(); // just children in dfs tree
+        maybe_write_dot(graph, format!("graph_{}.ce.0.dot", iter).as_str(), "png");
         for edge in graph.edges(*ni) {
             let edge = edge.weight().clone();
             let e = edge.borrow();
@@ -251,11 +263,11 @@ fn cycle_equivalence(graph: &mut FlowGraph,
             // collect all edges
             edges.push((edge.clone(), graph[NodeIndex::new(from)].clone(), from));
         }
-        //write_dot(graph, format!("graph_{}.ce.1.dot", iter).as_str(), "png");
+        maybe_write_dot(graph, format!("graph_{}.ce.1.dot", iter).as_str(), "png");
         let mut hi_0 = usize::max_value();
         let mut hi_1 = usize::max_value();
         let mut hi_2 = usize::max_value();
-        let mut hichild = 0;
+        let mut hichild = usize::max_value();
         for (edge, other, _) in edges.iter() {
             let edge = edge.borrow();
             let other = other.borrow();
@@ -273,7 +285,7 @@ fn cycle_equivalence(graph: &mut FlowGraph,
                 hi_1 = hi_1.min(other.hi);
             }
         }
-        //write_dot(graph, format!("graph_{}.ce.2.dot", iter).as_str(), "png");
+        maybe_write_dot(graph, format!("graph_{}.ce.2.dot", iter).as_str(), "png");
         println!("cycle_equivalence: hi_1 {}", hi_1);
         node.borrow_mut().hi = hi_0.min(hi_1);
         println!("cycle_equivalence: node {} hi {}", nid, node.borrow().hi);
@@ -286,7 +298,7 @@ fn cycle_equivalence(graph: &mut FlowGraph,
                 break;
             }
         }
-        //write_dot(graph, format!("graph_{}.ce.3.dot", iter).as_str(), "png");
+        maybe_write_dot(graph, format!("graph_{}.ce.3.dot", iter).as_str(), "png");
         for child in children.iter() {
             let child = child.borrow();
             if child.id != hichild {
@@ -294,7 +306,7 @@ fn cycle_equivalence(graph: &mut FlowGraph,
                 hi_2 = hi_2.min(child.hi);
             }
         }
-        //write_dot(graph, format!("graph_{}.ce.4.dot", iter).as_str(), "png");
+        maybe_write_dot(graph, format!("graph_{}.ce.4.dot", iter).as_str(), "png");
         println!("cycle_equivalence: hi_0: {}, hi_1: {}, hi_2: {}", hi_0, hi_1, hi_2);
         // /* compute bracketlist */
         // n.blist := create();
@@ -306,7 +318,7 @@ fn cycle_equivalence(graph: &mut FlowGraph,
             println!("cycle_equivalence: child {} with blist {:?}", child.id, child.blist);
             node.borrow_mut().blist.concat(&child.blist.clone());
         }
-        //write_dot(graph, format!("graph_{}.ce.5.dot", iter).as_str(), "png");
+        maybe_write_dot(graph, format!("graph_{}.ce.5.dot", iter).as_str(), "png");
         // for each capping backedge d from a descendent of n to n, delete backedge d from n.blist
         println!("cycle_equivalence: deleting capping backedges from descendents from blist");
         for (edge_, other, _) in edges.iter() {
@@ -317,7 +329,7 @@ fn cycle_equivalence(graph: &mut FlowGraph,
                 node.borrow_mut().blist.delete(edge_.clone());
             }
         }
-        //write_dot(graph, format!("graph_{}.ce.6.dot", iter).as_str(), "png");
+        maybe_write_dot(graph, format!("graph_{}.ce.6.dot", iter).as_str(), "png");
         // for each backedge b from a descendant of n to n
         // delete it from the node bracketlist n.blist
         // if b.class is not defined (==0), then set b.class to be a new class
@@ -335,7 +347,7 @@ fn cycle_equivalence(graph: &mut FlowGraph,
                 println!("cycle_equivalence: set edge class {}", edge.class);
             }
         }
-        //write_dot(graph, format!("graph_{}.ce.7.dot", iter).as_str(), "png");
+        maybe_write_dot(graph, format!("graph_{}.ce.7.dot", iter).as_str(), "png");
         // for each backedge e from n to an ancestor of n
         // push the edge onto the node bracketlist n.blist
         for (edge_, other, _) in edges.iter() {
@@ -345,24 +357,27 @@ fn cycle_equivalence(graph: &mut FlowGraph,
                 node.borrow_mut().blist.push(edge_.clone());
             }
         }
-        //write_dot(graph, format!("graph_{}.ce.8.dot", iter).as_str(), "png");
+        maybe_write_dot(graph, format!("graph_{}.ce.8.dot", iter).as_str(), "png");
         // if hi_2 < hi_0 then we create a capping backedge and add it to the graph
         if hi_2 < hi_0 {
             println!("cycle_equivalence: creating capping backedge because hi_2 = {} < hi_0 = {}", hi_2, hi_0);
-            let mut e = Edge::new(nid, hi_2);
+            let mut e = Edge::new(nid, order[hi_2].index());
             e.is_backedge = true;
             e.is_capping = true;
-            e.class = next_class();
+            //e.class = next_class();
             let edge = Rc::new(RefCell::new(e));
-            graph.add_edge(NodeIndex::new(hi_2), NodeIndex::new(nid), edge.clone());
+            graph.add_edge(NodeIndex::new(nid), NodeIndex::new(order[hi_2].index()), edge.clone());
             node.borrow_mut().blist.push(edge.clone());
+            // add it to our edge list
+            edges.push((edge.clone(), node.clone(), hi_2));
         }
-        //write_dot(graph, format!("graph_{}.ce.9.dot", iter).as_str(), "png");
+        maybe_write_dot(graph, format!("graph_{}.ce.9.dot", iter).as_str(), "png");
         // determine the class for edge from parent(n) to n
         // if n is not the root of dfs tree
+        
         if ndfsnum != 0 {
             println!("cycle_equivalence: n is not the root of dfs tree");
-            // find the parent, which will be a node with a tree edge to this node where the dfsnum is one less
+            // find the parent, which will be a node with a tree edge to this node where the dfsnum is less than this node's dfsnum
             // let e be the tree edge from parent(n) to n
             let mut e = Rc::new(RefCell::new(Edge::new(0, 0)));
             for (edge_, other, _) in edges.iter() {
@@ -390,12 +405,11 @@ fn cycle_equivalence(graph: &mut FlowGraph,
             // set e.class to b.recent_class
             e.borrow_mut().class = b.borrow().recent_class;
             println!("cycle_equivalence: e.class is {}", e.borrow().class);
+            println!("cycle_equivalence: b.recent_size is {}", b.borrow().recent_size);
             if b.borrow().recent_size == 1 {
                 b.borrow_mut().class = e.borrow().class;
             }
         }
-        //iter += 1;
-        //write_dot(graph, format!("graph_{}.ce.dot", iter).as_str(), "png");
     }
 }
 
@@ -827,6 +841,26 @@ fn make_example_0() -> FlowGraph {
     graph
 }
 
+fn flowify(graph: &mut FlowGraph) {
+    // add an edge from the source to node with id=1
+    add_graph_edge(graph, NodeIndex::new(0), NodeIndex::new(1));
+
+    // add an edge from the node with id=node_count-1 to the sink
+    add_graph_edge(graph, NodeIndex::new(graph.node_count()-2), NodeIndex::new(graph.node_count()-1));
+
+    // add sink to source
+    add_graph_edge(graph, NodeIndex::new(graph.node_count()-1), NodeIndex::new(0));
+
+    // add edges from source to all nodes with an edge count of 1
+    for node in graph.node_indices() {
+        if graph.edges(node).count() == 1 {
+            println!("adding edge from source to node {}", node.index());
+            add_graph_edge(graph, NodeIndex::new(0), node);
+        }
+    }
+
+}
+
 
 fn make_example_a() -> FlowGraph {
     let mut graph = FlowGraph::new_undirected();
@@ -915,8 +949,9 @@ fn make_example_fig1() -> FlowGraph {
     add_graph_edge(&mut graph, n15, n0);
     graph
 }
+// rewrite the previous function, incrementing all numbers by 1, both in the ids and in the variable names
 
-fn make_example_diamond() -> FlowGraph {
+fn make_example_fig1_a() -> FlowGraph {
     let mut graph = FlowGraph::new_undirected();
     let n0 = add_graph_node(&mut graph, 0);
     let n1 = add_graph_node(&mut graph, 1);
@@ -924,8 +959,77 @@ fn make_example_diamond() -> FlowGraph {
     let n3 = add_graph_node(&mut graph, 3);
     let n4 = add_graph_node(&mut graph, 4);
     let n5 = add_graph_node(&mut graph, 5);
-    // 0 -> 1
+    let n6 = add_graph_node(&mut graph, 6);
+    let n7 = add_graph_node(&mut graph, 7);
+    let n8 = add_graph_node(&mut graph, 8);
+    let n9 = add_graph_node(&mut graph, 9);
+    let n10 = add_graph_node(&mut graph, 10);
+    let n11 = add_graph_node(&mut graph, 11);
+    let n12 = add_graph_node(&mut graph, 12);
+    let n13 = add_graph_node(&mut graph, 13);
+    let n14 = add_graph_node(&mut graph, 14);
+    let n15 = add_graph_node(&mut graph, 15);
+    let n16 = add_graph_node(&mut graph, 16);
+    let n17 = add_graph_node(&mut graph, 17);
+    //let n18 = add_graph_node(&mut graph, 18);
+    // 1 -> 2 and 3
+    add_graph_edge(&mut graph, n1, n2);
+    add_graph_edge(&mut graph, n1, n3);
+    // 2 -> 4 and 14
+    add_graph_edge(&mut graph, n2, n4);
+    add_graph_edge(&mut graph, n2, n14);
+    // 3 -> 5
+    add_graph_edge(&mut graph, n3, n5);
+    // 5 -> 7 and 9
+    add_graph_edge(&mut graph, n5, n7);
+    add_graph_edge(&mut graph, n5, n9);
+    // 4 -> 6
+    add_graph_edge(&mut graph, n4, n6);
+    // 6 -> 8 and 10
+    add_graph_edge(&mut graph, n6, n8);
+    add_graph_edge(&mut graph, n6, n10);
+    // 8 -> 12
+    add_graph_edge(&mut graph, n8, n12);
+    // 10 -> 12
+    add_graph_edge(&mut graph, n10, n12);
+    // 7 -> 11
+    add_graph_edge(&mut graph, n7, n11);
+    // 9 -> 11 and 13
+    add_graph_edge(&mut graph, n9, n11);
+    add_graph_edge(&mut graph, n9, n13);
+    // 11 -> 13
+    add_graph_edge(&mut graph, n11, n13);
+    // 12 -> 14
+    add_graph_edge(&mut graph, n12, n14);
+    // 13 -> 15
+    add_graph_edge(&mut graph, n13, n15);
+    // 14 -> 16
+    add_graph_edge(&mut graph, n14, n16);
+    // 15 -> 16
+    add_graph_edge(&mut graph, n15, n16);
+    // link linkers
+    add_graph_edge(&mut graph, n16, n17);
+    add_graph_edge(&mut graph, n17, n0);
+    //add_graph_edge(&mut graph, n18, n0);
     add_graph_edge(&mut graph, n0, n1);
+    
+    //add_graph_edge(&mut graph, n16, n1);
+    // add flow cycle edges
+    //flowify(&mut graph);
+    
+    graph
+}
+
+fn make_example_diamond() -> FlowGraph {
+    let mut graph = FlowGraph::new_undirected();
+    let _n0 = add_graph_node(&mut graph, 0); // source
+    let n1 = add_graph_node(&mut graph, 1);
+    let n2 = add_graph_node(&mut graph, 2);
+    let n3 = add_graph_node(&mut graph, 3);
+    let n4 = add_graph_node(&mut graph, 4);
+    let _n5 = add_graph_node(&mut graph, 5); // sink
+    // 0 -> 1
+    //add_graph_edge(&mut graph, n0, n1);
     // 1 -> 2 and 3
     add_graph_edge(&mut graph, n1, n2);
     add_graph_edge(&mut graph, n1, n3);
@@ -934,16 +1038,64 @@ fn make_example_diamond() -> FlowGraph {
     // 3 -> 4
     add_graph_edge(&mut graph, n3, n4);
     // 4 -> 5
-    add_graph_edge(&mut graph, n4, n5);
+    //add_graph_edge(&mut graph, n4, n5);
     // 5 -> 0
-    add_graph_edge(&mut graph, n5, n0);
+    //add_graph_edge(&mut graph, n5, n0);
+    flowify(&mut graph);
     graph
 }
 
-fn main() {
+fn make_example_c() -> FlowGraph {
+    let mut graph = FlowGraph::new_undirected();
+    let n10 = add_graph_node(&mut graph, 10); // source
+    let n0 = add_graph_node(&mut graph, 0);
+    let n1 = add_graph_node(&mut graph, 1);
+    let n2 = add_graph_node(&mut graph, 2);
+    let n3 = add_graph_node(&mut graph, 3);
+    let n4 = add_graph_node(&mut graph, 4);
+    let n5 = add_graph_node(&mut graph, 5);
+    let n6 = add_graph_node(&mut graph, 6);
+    let n7 = add_graph_node(&mut graph, 7);
+    let n8 = add_graph_node(&mut graph, 8);
+    let n9 = add_graph_node(&mut graph, 9);
 
+    add_graph_edge(&mut graph, n10, n0);
+    
+    // 0 - 4 make a line
+    add_graph_edge(&mut graph, n0, n1);
+    add_graph_edge(&mut graph, n1, n2);
+    add_graph_edge(&mut graph, n2, n3);
+    add_graph_edge(&mut graph, n3, n4);
+    // 4 - 5, 5 - 6
+    add_graph_edge(&mut graph, n4, n5);
+    add_graph_edge(&mut graph, n5, n6);
+    // other fork
+    // 4 - 7, 7 - 8
+    add_graph_edge(&mut graph, n4, n7);
+    add_graph_edge(&mut graph, n7, n8);
+
+    // extra edges
+    add_graph_edge(&mut graph, n0, n8);
+    add_graph_edge(&mut graph, n2, n7);
+    add_graph_edge(&mut graph, n3, n5);
+    add_graph_edge(&mut graph, n1, n6);
+
+    // connect tails
+    add_graph_edge(&mut graph, n6, n9);
+    add_graph_edge(&mut graph, n8, n9);
+
+    // loop
+    add_graph_edge(&mut graph, n9, n10);
+
+    graph
+
+}
+
+fn main() {
     //let mut graph = make_example_a();
-    let mut graph = make_example_fig1();
+    //let mut graph = make_example_c();
+    //let mut graph = make_example_fig1();
+    let mut graph = make_example_fig1_a();
     //let mut graph = make_example_diamond();
     let _tree = build_structure_tree(&mut graph);
 
