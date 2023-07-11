@@ -1140,10 +1140,38 @@ fn make_example_c() -> FlowGraph {
 
 }
 
+fn make_nonplanar_1() -> FlowGraph {
+    // make nodes 0 to 7
+    let mut graph = FlowGraph::new_undirected();
+    let n0 = add_graph_node(&mut graph, 0);
+    let n1 = add_graph_node(&mut graph, 1);
+    let n2 = add_graph_node(&mut graph, 2);
+    let n3 = add_graph_node(&mut graph, 3);
+    let n4 = add_graph_node(&mut graph, 4);
+    let n5 = add_graph_node(&mut graph, 5);
+    let n6 = add_graph_node(&mut graph, 6);
+    let n7 = add_graph_node(&mut graph, 7);
+    // make edges
+    add_graph_edge(&mut graph, n0, n1);
+    add_graph_edge(&mut graph, n1, n2);
+    add_graph_edge(&mut graph, n1, n5);
+    add_graph_edge(&mut graph, n2, n3);
+    add_graph_edge(&mut graph, n2, n4);
+    add_graph_edge(&mut graph, n3, n5);
+    add_graph_edge(&mut graph, n5, n4);
+    add_graph_edge(&mut graph, n4, n2);
+    add_graph_edge(&mut graph, n3, n6);
+    add_graph_edge(&mut graph, n6, n7);
+    // 7 - 0
+    add_graph_edge(&mut graph, n7, n0);
+    graph
+}
+
 fn main() {
     //let mut graph = make_example_a();
     //let mut graph = make_example_c();
-    let mut graph = make_example_fig1();
+    //let mut graph = make_example_fig1();
+    let mut graph = make_nonplanar_1();
     //let mut graph = make_example_fig1_a();
     //let mut graph = make_example_diamond();
     let _tree = build_structure_tree(&mut graph);
