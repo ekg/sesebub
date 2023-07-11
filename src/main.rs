@@ -1161,6 +1161,7 @@ fn make_nonplanar_1() -> FlowGraph {
     add_graph_edge(&mut graph, n5, n4);
     add_graph_edge(&mut graph, n4, n2);
     add_graph_edge(&mut graph, n3, n6);
+    add_graph_edge(&mut graph, n4, n6);
     add_graph_edge(&mut graph, n6, n7);
     // 7 - 0
     add_graph_edge(&mut graph, n7, n0);
